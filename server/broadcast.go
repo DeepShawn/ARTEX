@@ -3,7 +3,7 @@ package server
 import (
 	"sync"
 
-	"github.com/Autumn-27/artex/db"
+	"github.com/kutukam/autonomous-pentest-agent/db"
 )
 
 // Broadcaster is a per-task in-process pub/sub for live activity events. The

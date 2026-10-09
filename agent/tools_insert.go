@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Autumn-27/artex/db"
+	"github.com/kutukam/autonomous-pentest-agent/db"
 	actool "github.com/Autumn-27/norma/tool"
 )
 

@@ -50,21 +50,21 @@ jobs:
           path: server/webui/dist
       - name: Build and package with build.sh
         env:
-          ARTEX_TARGET_OS: ${{ matrix.goos }}
-          ARTEX_TARGET_ARCH: ${{ matrix.goarch }}
-          ARTEX_BUILD_VERSION: ${{ github.ref_name }}
-          ARTEX_SKIP_FRONTEND: "1"
-          ARTEX_SKIP_NPM_CI: "1"
+          APAGENT_TARGET_OS: ${{ matrix.goos }}
+          APAGENT_TARGET_ARCH: ${{ matrix.goarch }}
+          APAGENT_BUILD_VERSION: ${{ github.ref_name }}
+          APAGENT_SKIP_FRONTEND: "1"
+          APAGENT_SKIP_NPM_CI: "1"
           # UPX 自解压 ELF 在部分 Linux 内核、虚拟化和安全策略下会崩溃。
           # Release 使用 Go linker 裁剪和 zip 压缩，优先保证可移植性。
-          ARTEX_COMPRESS: "0"
-          ARTEX_PACKAGE: "1"
-          ARTEX_PACKAGE_DIR: dist
+          APAGENT_COMPRESS: "0"
+          APAGENT_PACKAGE: "1"
+          APAGENT_PACKAGE_DIR: dist
         run: |
-          ./build.sh --target "${ARTEX_TARGET_OS}/${ARTEX_TARGET_ARCH}"
+          ./build.sh --target "${APAGENT_TARGET_OS}/${APAGENT_TARGET_ARCH}"
       - name: Smoke test Linux amd64 binary
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        run: dist/artex-linux-amd64/artex -h
+        run: dist/apagent-linux-amd64/apagent -h
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -74,7 +74,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bin-linux-${{ matrix.goarch }}
-          path: dist/artex-linux-${{ matrix.goarch }}/artex
+          path: dist/apagent-linux-${{ matrix.goarch }}/apagent
 
   # ③ 汇总所有 zip → 创建 GitHub Release
   release:
@@ -120,7 +120,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: autumn27/artex
+          images: autumn27/apagent
           tags: |
             type=ref,event=tag
             type=raw,value=latest

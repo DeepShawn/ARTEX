@@ -14,12 +14,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Autumn-27/artex/agent"
-	pgdb "github.com/Autumn-27/artex/db"
-	"github.com/Autumn-27/artex/enrich"
-	"github.com/Autumn-27/artex/guard"
-	"github.com/Autumn-27/artex/intercept"
-	"github.com/Autumn-27/artex/traffic"
+	"github.com/kutukam/autonomous-pentest-agent/agent"
+	pgdb "github.com/kutukam/autonomous-pentest-agent/db"
+	"github.com/kutukam/autonomous-pentest-agent/enrich"
+	"github.com/kutukam/autonomous-pentest-agent/guard"
+	"github.com/kutukam/autonomous-pentest-agent/intercept"
+	"github.com/kutukam/autonomous-pentest-agent/traffic"
 	actool "github.com/Autumn-27/norma/tool"
 )
 

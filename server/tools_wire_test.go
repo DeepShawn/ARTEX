@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	actool "github.com/Autumn-27/norma/tool"
-	"github.com/Autumn-27/artex/agent"
-	"github.com/Autumn-27/artex/db"
+	"github.com/kutukam/autonomous-pentest-agent/agent"
+	"github.com/kutukam/autonomous-pentest-agent/db"
 )
 
 func names(tools []actool.CoreTool) map[string]actool.CoreTool {

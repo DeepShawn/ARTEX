@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Autumn-27/artex/agent"
+	"github.com/kutukam/autonomous-pentest-agent/agent"
 )
 
 func TestShutdownContextPreservesNamedCause(t *testing.T) {

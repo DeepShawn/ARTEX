@@ -1,0 +1,10 @@
+Autonomous Pentest Agent
+
+This project is a derivative work of ARTEX, originally created by Autumn-27
+(https://github.com/Autumn-27). It is distributed under the GNU Affero General
+Public License v3.0 (AGPL-3.0); see the LICENSE file for the full terms.
+
+The product has been rebranded from "ARTEX" to "Autonomous Pentest Agent".
+All original copyright and authorship records are retained, including the
+version history and author credits in CHANGELOG.md. The agent capabilities are
+provided by the `norma` SDK (https://github.com/Autumn-27/norma).

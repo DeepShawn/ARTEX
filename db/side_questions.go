@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Autumn-27/artex/sidequestion"
+	"github.com/kutukam/autonomous-pentest-agent/sidequestion"
 	"github.com/google/uuid"
 )
 

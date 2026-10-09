@@ -4,9 +4,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/Autumn-27/artex/agent"
-	"github.com/Autumn-27/artex/db"
-	"github.com/Autumn-27/artex/llmpool"
+	"github.com/kutukam/autonomous-pentest-agent/agent"
+	"github.com/kutukam/autonomous-pentest-agent/db"
+	"github.com/kutukam/autonomous-pentest-agent/llmpool"
 	"github.com/Autumn-27/norma/llm"
 )
 

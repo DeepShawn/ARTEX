@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	pgdb "github.com/Autumn-27/artex/db"
+	pgdb "github.com/kutukam/autonomous-pentest-agent/db"
 	"github.com/klauspost/compress/zstd"
 )
 

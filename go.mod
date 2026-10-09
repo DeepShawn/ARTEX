@@ -1,4 +1,4 @@
-module github.com/Autumn-27/artex
+module github.com/kutukam/autonomous-pentest-agent
 
 go 1.26.3
 

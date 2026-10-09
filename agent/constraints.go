@@ -3,7 +3,7 @@ package agent
 import (
 	"strings"
 
-	"github.com/Autumn-27/artex/db"
+	"github.com/kutukam/autonomous-pentest-agent/db"
 )
 
 // constraintBlock renders this task's operation constraints (task_constraints) as a

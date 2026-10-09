@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Autumn-27/artex/db"
-	"github.com/Autumn-27/artex/guard"
-	"github.com/Autumn-27/artex/intercept"
-	"github.com/Autumn-27/artex/llmrec"
+	"github.com/kutukam/autonomous-pentest-agent/db"
+	"github.com/kutukam/autonomous-pentest-agent/guard"
+	"github.com/kutukam/autonomous-pentest-agent/intercept"
+	"github.com/kutukam/autonomous-pentest-agent/llmrec"
 	"github.com/Autumn-27/norma/llm"
 )
 

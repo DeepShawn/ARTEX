@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Autumn-27/artex/db"
+	"github.com/kutukam/autonomous-pentest-agent/db"
 )
 
 // TestChatUnavailableReasonDistinguishesStates pins the operator-facing message
