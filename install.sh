@@ -10,6 +10,23 @@ die(){  printf '\033[31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 ask(){  local p="$1" d="${2:-}" a; read -rp "$p${d:+ [$d]}: " a; echo "${a:-$d}"; }
 rand(){ head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24; }
 
+# Compose 的单引号值保留 $、&、| 等字面字符；逐行写入避免 sed replacement 注入。
+dotenv_set(){
+  local name="$1" value="$2" line
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *\\* ]] \
+    || die "配置值不能含换行或反斜杠，请在 .env 中手动配置"
+  value="${value//\'/\\\'}"
+  ( umask 077
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        "$name="*) printf "%s='%s'\n" "$name" "$value" ;;
+        *) printf '%s\n' "$line" ;;
+      esac
+    done < .env > .env.tmp
+  )
+  mv -f .env.tmp .env
+}
+
 # ── docker 环境检测 / 自动安装 ───────────────────
 ensure_docker(){
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -37,23 +54,28 @@ install_docker(){
     cp .env.example .env 2>/dev/null || true
     local pw key
     pw="$(ask 'Postgres 密码（回车随机生成）' "$(rand)")"
+    [[ "$pw" =~ ^[A-Za-z0-9._~-]+$ ]] \
+      || die "密码请使用字母数字或 . _ ~ -；其他密码请手动填写 .env 并设置 URL 编码的 APAGENT_PG_DSN"
     key="$(ask 'ANTHROPIC_API_KEY（可留空，后续在 UI 配）' '')"
-    sed -i.bak "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${pw}|" .env
-    sed -i.bak "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=${key}|" .env
-    rm -f .env.bak
+    dotenv_set POSTGRES_PASSWORD "$pw"
+    dotenv_set ANTHROPIC_API_KEY "$key"
     ok "已生成 .env（POSTGRES_PASSWORD 已设置）"
   else
     info "沿用已存在的 .env"
   fi
-  info "拉取镜像并启动…"
-  docker compose pull || true
-  docker compose up -d
+  info "拉取 GHCR 镜像并启动（等待数据库与应用就绪）…"
+  docker compose pull
+  docker compose up -d --wait --wait-timeout 180
   ok "启动完成 → http://localhost:8787"
   info "查看日志：docker compose logs -f apagent"
 }
 
 # ── ② 本地编译运行 ──────────────────────────────
 install_local(){
+  command -v go >/dev/null 2>&1 && go version >/dev/null 2>&1 \
+    || die "未检测到 Go 工具链（>=1.26.3）：https://go.dev/dl/"
+  command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 \
+    || die "完整部署需要 Node.js >=20.9 与 npm，用于构建内嵌前端"
   echo "数据库安装方式："
   echo "  1) 连接已有 PostgreSQL"
   echo "  2) 用 Docker 起一个 PostgreSQL（需要 docker）"
@@ -61,9 +83,17 @@ install_local(){
     2)
       ensure_docker
       local pw; pw="$(ask 'Postgres 密码（回车随机）' "$(rand)")"
-      docker run -d --name apagent-pg -p 5432:5432 \
+      docker run -d --name apagent-pg -p 127.0.0.1:5432:5432 \
         -e POSTGRES_USER=apagent -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=apagent \
         -v apagent-pg:/var/lib/postgresql/data postgres:16-alpine
+      local ready=0 attempt
+      for attempt in {1..60}; do
+        if docker exec apagent-pg pg_isready -U apagent -d apagent >/dev/null 2>&1; then
+          ready=1; break
+        fi
+        sleep 1
+      done
+      [ "$ready" -eq 1 ] || die "PostgreSQL 启动超时，请检查 docker logs apagent-pg"
       DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=apagent DB_PASS="$pw" DB_NAME=apagent DB_SSL=disable ;;
     *)
       DB_HOST="$(ask '数据库地址' 127.0.0.1)"
@@ -75,39 +105,37 @@ install_local(){
   esac
 
   # 生成 config.json
-  cat > config.json <<JSON
-{
-  "database": {
-    "host": "${DB_HOST}",
-    "port": ${DB_PORT},
-    "user": "${DB_USER}",
-    "password": "${DB_PASS}",
-    "dbname": "${DB_NAME}",
-    "sslmode": "${DB_SSL}"
-  }
-}
-JSON
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_PASS="$DB_PASS" \
+    DB_NAME="$DB_NAME" DB_SSL="$DB_SSL" node <<'JS'
+const fs = require("node:fs");
+const e = process.env;
+fs.writeFileSync("config.json", JSON.stringify({database: {
+  host: e.DB_HOST, port: Number(e.DB_PORT), user: e.DB_USER,
+  password: e.DB_PASS, dbname: e.DB_NAME, sslmode: e.DB_SSL,
+}}, null, 2) + "\n", {mode: 0o600});
+JS
   ok "已生成 config.json"
 
   # go 环境检查
-  command -v go >/dev/null 2>&1 || die "未检测到 Go，请先安装 Go（>=1.26）：https://go.dev/dl/"
   ok "Go: $(go version)"
 
   # 内嵌前端需要 node 出静态产物
-  if command -v npm >/dev/null 2>&1; then
-    info "构建前端静态产物…"
-    ( cd web && npm ci && npm run build:static )
-    rm -rf server/webui/dist && cp -r web/out server/webui/dist
-    info "编译内嵌单二进制…"
-    CGO_ENABLED=0 go build -tags embedui -trimpath -o apagent ./cmd/apagent
-  else
-    warn "未检测到 npm：将编译**不内嵌前端**的后端（前端需另跑 npm run dev）"
-    CGO_ENABLED=0 go build -o apagent ./cmd/apagent
+  info "构建前端静态产物…"
+  ( cd web && npm ci && npm run build:static )
+  rm -rf server/webui/dist && mkdir -p server/webui/dist && cp -R web/out/. server/webui/dist/
+  local build_version=dev
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    build_version="$(git describe --tags --always --dirty)"
+    build_version="${build_version#v}"
   fi
+  info "编译内嵌单二进制…"
+  CGO_ENABLED=0 go build -tags embedui -trimpath \
+    -ldflags "-s -w -X main.version=${build_version}" -o apagent.next ./cmd/apagent
+  mv -f apagent.next apagent
   ok "编译完成 → ./apagent"
 
   info "启动…（Ctrl-C 退出）"
-  ./apagent
+  ./start.sh
 }
 
 echo "=============================="

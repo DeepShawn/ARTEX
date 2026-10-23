@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Autumn-27/norma/llm"
+	"github.com/kutukam/autonomous-pentest-agent/agent"
 	"github.com/kutukam/autonomous-pentest-agent/db"
 )
 
@@ -23,8 +25,40 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer m.Close()
+	defer restoreConcurrencySetting(t, m)()
+	if err := m.SetConcurrency(false, defaultConcurrencyLimit); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"goals", "planner", "worker"} {
+		configured, err := m.pg.GetAgentByKey(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if configured != nil && configured.LLMProfileID != nil {
+			if err := m.pg.SetAgentLLMProfile(key, nil); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := m.pg.SetAgentLLMProfile(key, configured.LLMProfileID); err != nil {
+					t.Errorf("restore %s LLM binding: %v", key, err)
+				}
+			}()
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	s := New(ctx, m, td, td, td)
+	// Lifecycle persistence must not depend on another test's active model or
+	// concurrency cap. A local provider finishes without tool calls, exercising
+	// the real asynchronous raw-goal fallback without making network requests.
+	s.cfgMu.Lock()
+	s.llmOn = true
+	s.llmCfg = agent.Config{Model: "core-lifecycle-fixture"}
+	s.llmProv = retestProvider{complete: func(context.Context, llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
+		return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentBlock{llm.TextBlock("Fixture completed.")}}, "end_turn", llm.Usage{}, nil
+	}}
+	s.cfgMu.Unlock()
 	h := s.Handler()
 	tok, err := signJWT(s.jwtKey)
 	if err != nil {
@@ -71,6 +105,13 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 	if id == "" || expID == 0 {
 		t.Fatalf("bad task payload: %v", out)
 	}
+	defer func() {
+		cancel()
+		drain, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		_ = s.waitTaskQuiescent(drain, id)
+		_, _ = m.DeleteTask(id, DeleteTaskOptions{})
+	}()
 
 	// the exploration owns goal node(s) — goal seeding is async, poll briefly
 	var goals []*db.Node
@@ -86,6 +127,12 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 	}
 	if len(goals) < 1 {
 		t.Fatalf("expected goal nodes seeded, got %d", len(goals))
+	}
+	var goalPayload struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(goals[0].Payload, &goalPayload); err != nil || goalPayload.Text != "测试 SQLi/XSS" {
+		t.Fatalf("expected original task goal fallback, payload=%s err=%v", goals[0].Payload, err)
 	}
 
 	// it shows in the task list

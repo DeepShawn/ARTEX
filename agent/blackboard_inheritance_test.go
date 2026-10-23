@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kutukam/autonomous-pentest-agent/db"
 	actool "github.com/Autumn-27/norma/tool"
+	"github.com/kutukam/autonomous-pentest-agent/db"
 )
 
 func callReadJSON(t *testing.T, tool actool.CoreTool, input string) any {
@@ -25,16 +25,21 @@ func callReadJSON(t *testing.T, tool actool.CoreTool, input string) any {
 	return out
 }
 
-func TestGraphOverviewExpandsAssociatedCompanyScope(t *testing.T) {
+func TestGraphOverviewPreservesAssociatedCompanyAssetContext(t *testing.T) {
 	d := testDB(t)
-	defer d.Close()
+	// Keep the connection open until task, asset and company cleanup has run.
+	t.Cleanup(func() { _ = d.Close() })
 
 	companies := d.Companies()
 	companyID, _, err := companies.UpsertCompany(fmt.Sprintf("overview-scope-%d", time.Now().UnixNano()), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = companies.DeleteCompany(companyID) })
+	t.Cleanup(func() {
+		if err := companies.DeleteCompany(companyID); err != nil {
+			t.Errorf("cleanup company: %v", err)
+		}
+	})
 
 	domain := fmt.Sprintf("overview-scope-%d.invalid", companyID)
 	ip := fmt.Sprintf("2001:db8:%x::42", companyID%0xffff)
@@ -57,7 +62,11 @@ func TestGraphOverviewExpandsAssociatedCompanyScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = assets.DeleteByIDs([]int64{assetID}) })
+	t.Cleanup(func() {
+		if _, err := assets.DeleteByIDs([]int64{assetID}); err != nil {
+			t.Errorf("cleanup asset: %v", err)
+		}
+	})
 
 	task, err := d.CreateTaskWithOptions("company context", "read configured scope", db.TaskCreateOptions{
 		CompanyIDs: []int64{companyID},
@@ -65,7 +74,11 @@ func TestGraphOverviewExpandsAssociatedCompanyScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = d.DeleteTask(task.ID) })
+	t.Cleanup(func() {
+		if err := d.DeleteTask(task.ID); err != nil {
+			t.Errorf("cleanup task: %v", err)
+		}
+	})
 
 	tools := NewToolSet(d.Exploration(task.ExplorationID), "planner")
 	tools.SetTaskID(task.ID)
@@ -82,29 +95,50 @@ func TestGraphOverviewExpandsAssociatedCompanyScope(t *testing.T) {
 	if !ok {
 		t.Fatalf("coverage missing: %#v", overview["coverage"])
 	}
-	scopeRows, ok := coverage["scope"].([]map[string]any)
-	if !ok || len(scopeRows) != 1 {
-		t.Fatalf("task scope missing: %#v", coverage["scope"])
+	// The compact overview intentionally omits expanded scope since 0.3.14.
+	// The task/company scope APIs must still retain every configured rule.
+	if _, exists := coverage["scope"]; exists {
+		t.Fatalf("compact overview unexpectedly expanded company scope: %#v", coverage["scope"])
 	}
-	companyScope, ok := scopeRows[0]["company_scope"].([]map[string]any)
-	if !ok || len(companyScope) != len(inputs) {
-		t.Fatalf("company scope not expanded: %#v", scopeRows[0])
+	scopeRows, err := assets.ListTaskScopeWithSources(task.ID)
+	if err != nil || len(scopeRows) != 1 {
+		t.Fatalf("task scope missing: rows=%+v err=%v", scopeRows, err)
+	}
+	scope := scopeRows[0]
+	if scope.TaskID != task.ID || scope.Kind != "company" || scope.CompanyID == nil || *scope.CompanyID != companyID || scope.CompanyName != companiesName(t, companies, companyID) {
+		t.Fatalf("associated company scope mismatch: %+v", scope)
+	}
+	companyScope, err := companies.GetScope(*scope.CompanyID)
+	if err != nil || len(companyScope) != len(inputs) {
+		t.Fatalf("company scope missing: rows=%+v err=%v", companyScope, err)
 	}
 	kinds := make(map[string]string, len(companyScope))
+	var keywords []string
 	for _, rule := range companyScope {
-		kinds[fmt.Sprint(rule["kind"])] = fmt.Sprint(rule["value"])
+		if rule.CompanyID != companyID {
+			t.Fatalf("scope rule has wrong company: %+v", rule)
+		}
+		kinds[rule.Kind] = rule.Raw
+		if rule.Kind == "keyword" {
+			keywords = append(keywords, rule.Raw)
+		}
 	}
 	for _, input := range inputs {
 		if kinds[input.Kind] != input.Value {
 			t.Errorf("scope %s=%q want %q", input.Kind, kinds[input.Kind], input.Value)
 		}
 	}
-	keywords, ok := scopeRows[0]["company_keywords"].([]string)
-	if !ok || len(keywords) != 1 || keywords[0] != keyword {
-		t.Fatalf("company keywords missing: %#v", scopeRows[0]["company_keywords"])
+	if len(keywords) != 1 || keywords[0] != keyword {
+		t.Fatalf("company keywords missing: %#v", keywords)
 	}
-	if hc, _ := coverage["host_count"].(int); hc < 1 {
+	if hc, _ := coverage["host_count"].(int); hc != 1 {
 		t.Fatalf("company asset host not counted in agent context: %#v", coverage["host_count"])
+	}
+	if denominator, _ := coverage["denominator"].(int); denominator != 1 {
+		t.Fatalf("company asset missing from coverage denominator: %#v", coverage)
+	}
+	if tested, ok := coverage["tested"].(int); !ok || tested != 0 {
+		t.Fatalf("untouched company asset incorrectly counted as tested: %#v", coverage)
 	}
 	untested := callReadJSON(t, tools.listUntestedAssets(), `{"type":"root_domain","page":1,"page_size":10}`)
 	if !strings.Contains(fmt.Sprint(untested), domain) {
@@ -142,7 +176,11 @@ func TestGraphOverviewExpandsAssociatedCompanyScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = d.DeleteTask(disabledTask.ID) })
+	t.Cleanup(func() {
+		if err := d.DeleteTask(disabledTask.ID); err != nil {
+			t.Errorf("cleanup coverage-disabled task: %v", err)
+		}
+	})
 	disabledTools := NewToolSet(d.Exploration(disabledTask.ExplorationID), "planner")
 	disabledTools.SetTaskID(disabledTask.ID)
 	disabledTools.SetCoverageEnabled(false)
@@ -155,8 +193,10 @@ func TestGraphOverviewExpandsAssociatedCompanyScope(t *testing.T) {
 	if hc, _ := disabledCoverage["host_count"].(int); hc < 1 {
 		t.Fatalf("coverage-disabled task lost company asset host count: %#v", disabledCoverage["host_count"])
 	}
-	if _, exists := disabledCoverage["denominator"]; exists {
-		t.Fatalf("coverage-disabled task unexpectedly exposed metrics: %#v", disabledCoverage)
+	for _, field := range []string{"scope", "denominator", "tested", "pct", "by_type"} {
+		if _, exists := disabledCoverage[field]; exists {
+			t.Fatalf("coverage-disabled task unexpectedly exposed %s: %#v", field, disabledCoverage)
+		}
 	}
 	if linked, err := assets.QueryByTask(disabledTask.ID, "root_domain", 10, 0); err != nil || len(linked) != 1 || linked[0].ID != assetID {
 		t.Fatalf("coverage-disabled task asset link=%+v err=%v", linked, err)

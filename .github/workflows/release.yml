@@ -4,12 +4,46 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write # 创建 Release 需要
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
-  # ① 前端静态导出（一次），产物给交叉编译各平台复用
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: apagent
+          POSTGRES_PASSWORD: release-test-password
+          POSTGRES_DB: apagent_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U apagent -d apagent_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      APAGENT_PG_DSN: postgres://apagent:release-test-password@127.0.0.1:5432/apagent_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: '[[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          check-latest: true
+          cache: true
+      - name: Test backend with PostgreSQL
+        run: go test -p 1 -timeout 20m ./...
+
+  # Export the production frontend once; all binaries embed these same files.
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,16 +55,21 @@ jobs:
         working-directory: web
       - run: npm run build:static
         working-directory: web
+        env:
+          NEXT_PUBLIC_MOCK: "0"
+          NEXT_PUBLIC_BASE_PATH: ""
       - uses: actions/upload-artifact@v4
         with:
           name: web-dist
           path: web/out
+          if-no-files-found: error
 
-  # ② 五平台交叉编译（内嵌前端）+ 打 zip
   binaries:
     needs: frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         include:
           - { goos: linux, goarch: amd64 }
@@ -43,6 +82,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
       - uses: actions/download-artifact@v4
         with:
@@ -54,55 +94,86 @@ jobs:
           APAGENT_TARGET_ARCH: ${{ matrix.goarch }}
           APAGENT_BUILD_VERSION: ${{ github.ref_name }}
           APAGENT_SKIP_FRONTEND: "1"
-          APAGENT_SKIP_NPM_CI: "1"
-          # UPX 自解压 ELF 在部分 Linux 内核、虚拟化和安全策略下会崩溃。
-          # Release 使用 Go linker 裁剪和 zip 压缩，优先保证可移植性。
-          APAGENT_COMPRESS: "0"
+          # Avoid UPX self-extracting executables for portability.
+          APAGENT_COMPRESS: "off"
           APAGENT_PACKAGE: "1"
           APAGENT_PACKAGE_DIR: dist
-        run: |
-          ./build.sh --target "${APAGENT_TARGET_OS}/${APAGENT_TARGET_ARCH}"
-      - name: Smoke test Linux amd64 binary
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        run: dist/apagent-linux-amd64/apagent -h
+        run: ./build.sh --target "${APAGENT_TARGET_OS}/${APAGENT_TARGET_ARCH}"
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.goos }}-${{ matrix.goarch }}
           path: "dist/*.zip"
-      # Linux 生二进制单独上传，供 docker job 复用（免在镜像里重编前端+Go）
+          if-no-files-found: error
       - if: matrix.goos == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: bin-linux-${{ matrix.goarch }}
           path: dist/apagent-linux-${{ matrix.goarch }}/apagent
+          if-no-files-found: error
 
-  # ③ 汇总所有 zip → 创建 GitHub Release
-  release:
+  smoke:
     needs: binaries
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: apagent
+          POSTGRES_PASSWORD: release-smoke-password
+          POSTGRES_DB: apagent_smoke
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U apagent -d apagent_smoke"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pkg-linux-amd64
+          path: dist
+      - name: Smoke test packaged release with PostgreSQL
+        env:
+          APAGENT_PG_DSN: postgres://apagent:release-smoke-password@127.0.0.1:5432/apagent_smoke?sslmode=disable
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash .github/scripts/smoke-release.sh "dist/apagent-${RELEASE_TAG#v}-linux-amd64.zip" "$RELEASE_TAG"
+
+  release:
+    needs: [test, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           pattern: pkg-*
           merge-multiple: true
           path: dist
-      - name: Generate checksums
+      - name: Verify packages and generate checksums
         working-directory: dist
-        run: sha256sum *.zip > SHA256SUMS
+        run: |
+          test "$(find . -maxdepth 1 -name '*.zip' | wc -l)" -eq 5
+          for archive in *.zip; do unzip -tq "$archive"; done
+          sha256sum *.zip > SHA256SUMS
+          sha256sum -c SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.zip
             dist/SHA256SUMS
+          fail_on_unmatched_files: true
           generate_release_notes: true
 
-  # ④ 多架构镜像 → 推 Docker Hub（复用 binaries 编好的 Linux 二进制，
-  #    镜像里只装工具 + 放二进制；arm64 仅需模拟 apt 层，构建快很多）
+  # Publish this repository's multi-architecture image without Docker Hub secrets.
   docker:
-    needs: binaries
+    needs: [test, smoke]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4 # 取 Dockerfile 与 skills/
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: bin-linux-amd64
@@ -115,12 +186,13 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: autumn27/apagent
+          images: ghcr.io/deepshawn/artex
           tags: |
             type=ref,event=tag
             type=raw,value=latest

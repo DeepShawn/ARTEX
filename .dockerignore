@@ -14,3 +14,13 @@ bench/.env
 bench/scheduler.py
 bench/entrypoint_v2.sh
 bench/seed_v2.sh
+.env
+.env.*
+!.env.example
+config.json
+jwt.key
+apagent.new
+apagent.new.sha256
+apagent.old
+apagent.failed
+apagent.upgrade.json

@@ -35,7 +35,7 @@ usage() {
   ./build.sh --release               编译并打包全部支持的目标
 
 选项：
-  --release              构建 Linux、macOS、Windows 的 amd64/arm64 目标并生成 zip
+  --release              构建 Linux/macOS amd64+arm64、Windows amd64 并生成 zip
   --target OS/ARCH       设置单个目标，例如 windows/amd64
   --upx                  强制使用 UPX 压缩二进制（可能影响部分 Linux 环境兼容性）
   --no-compress          不使用 UPX，仅使用 Go linker 裁剪并压缩 zip
@@ -179,11 +179,12 @@ package_binary() {
     cp start.bat "$package_root/"
   else
     cp start.sh "$package_root/"
-    chmod +x "$package_root/start.sh"
+    cp reset-password.sh "$package_root/"
+    chmod +x "$package_root/start.sh" "$package_root/reset-password.sh"
   fi
   cp -R skills "$package_root/"
   cp config.example.json "$package_root/"
-  if [ -f README.md ]; then cp README.md "$package_root/"; fi
+  cp README.md LICENSE NOTICE CHANGELOG.md "$package_root/"
   (cd "$APAGENT_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
   rm -rf "$package_root"
   ok "Release 压缩包：$archive"

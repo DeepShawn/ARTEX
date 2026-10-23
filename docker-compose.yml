@@ -15,12 +15,12 @@ services:
     restart: unless-stopped
 
   apagent:
-    image: autumn27/apagent:${APAGENT_TAG:-latest}
+    image: ${APAGENT_IMAGE:-ghcr.io/deepshawn/artex}:${APAGENT_TAG:-v0.3.16}
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      APAGENT_PG_DSN: postgres://${POSTGRES_USER:-apagent}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-apagent}?sslmode=disable
+      APAGENT_PG_DSN: ${APAGENT_PG_DSN:-postgres://${POSTGRES_USER:-apagent}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-apagent}?sslmode=disable}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       APAGENT_LLM_PROVIDER: ${APAGENT_LLM_PROVIDER:-}
@@ -31,13 +31,22 @@ services:
       - "8787:8787"
       - "127.0.0.1:8788:8788"
     volumes:
-      # 把数据目录（含 jwt.key、SQLite 等）绑定到项目根目录的 data/，
+      # 把工作区、流量记录等运行数据绑定到项目根目录的 data/，
       # 方便在宿主机直接查看/备份，容器重建也不丢。
       - ./data:/app/data
+      # /app/jwt.key 链接到此独立认证目录；容器重建仍保留登录签名密钥。
+      - authdata:/app/auth
       # 把项目根目录的 skills 挂进容器（覆盖镜像内置的 /app/skills）；
       # 改 skill 无需重建镜像，容器读的就是宿主机这份。
       - ./skills:/app/skills
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/auth/status"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
     restart: unless-stopped
 
 volumes:
   pgdata:
+  authdata:

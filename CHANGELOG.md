@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-10-23
+
+### 部署与分发
+
+- 恢复 `DeepShawn/ARTEX` 的五平台 Release 构建，发布内嵌生产前端的 Linux、macOS、Windows 压缩包及 SHA256 校验文件。
+- 应用内更新、安装和升级脚本统一使用本仓库；容器镜像改由 GitHub Container Registry 分发。
+- 发布流水线增加 PostgreSQL 集成测试与实际服务启动检查，打包附带 LICENSE、NOTICE 和更新日志。
+- 修复 Docker 部署的 JWT 签名密钥持久化，更新数据库配置示例与部署文档。
+
 ## [0.3.15] - 2026-10-07
 
 ### 拦截

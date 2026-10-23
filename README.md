@@ -7,7 +7,7 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 🌐 **在线 Demo**： [https://apagent-demo.vercel.app/](https://apagent-demo.vercel.app/)
 
-📦 **本仓库是最后一个版本的纯源码备份**：官方 Docker 镜像与 Releases 均已失效，**只能从源码自行构建**。可用命令见 [部署](#部署) 一节（已实测）。
+📦 **ARTEX 分发渠道**：[GitHub Releases](https://github.com/DeepShawn/ARTEX/releases) 提供内嵌前端的预编译包，Docker 镜像发布到 `ghcr.io/deepshawn/artex`。当前发布版本：**v0.3.16**。
 
 </div>
 
@@ -66,35 +66,42 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 ## 部署
 
-> **先看这一段（重要）**：本仓库是最后一个版本的**纯源码备份**，官方分发渠道已经失效。下面这些"现成"路径**跑不通**，别在它们上面浪费时间：
->
-> | 渠道 | 状态 | 实测表现 |
-> | --- | --- | --- |
-> | Docker Hub `autumn27/apagent` | ❌ 已删除 | 拉取报 `object not found` |
-> | GitHub Releases 预编译包 | ❌ 空 | Releases 无任何产物，`方式三` 无从下载 |
-> | `install.sh` 选①、`docker compose up -d` | ❌ 不可用 | 依赖上面那个镜像，pull 阶段就失败 |
->
-> **可用路径只有「自己编译」**。下面方式的命令均在本机实测（Go 1.26.3 / Linux arm64 / PostgreSQL 16）。
+本仓库使用 [DeepShawn/ARTEX Releases](https://github.com/DeepShawn/ARTEX/releases) 与 GHCR 镜像 `ghcr.io/deepshawn/artex`。旧 Docker Hub `autumn27/apagent` 不再使用。
+
+**直接运行预编译包**：在 [v0.3.16](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.16) 下载对应平台的 zip 和 `SHA256SUMS`，校验并解压；目标机器无需 Go 或 Node.js，但必须能连接 PostgreSQL。Linux amd64 示例：
+
+```bash
+curl -fLO https://github.com/DeepShawn/ARTEX/releases/download/v0.3.16/apagent-0.3.16-linux-amd64.zip
+curl -fLO https://github.com/DeepShawn/ARTEX/releases/download/v0.3.16/SHA256SUMS
+# 只校验下载的这一份包；不要忽略校验失败。
+grep '  apagent-0.3.16-linux-amd64.zip$' SHA256SUMS | sha256sum -c -
+unzip apagent-0.3.16-linux-amd64.zip
+cd apagent-0.3.16-linux-amd64
+cp config.example.json config.json   # 按“数据库准备”填写连接信息
+./start.sh
+```
+
+Windows 下载 `windows-amd64` 包并运行 `start.bat`；macOS 下载对应 `darwin` 包。首次访问 `http://localhost:8787` 设置管理员密码。Docker 一体部署见下方方式二。
 
 ### 前置依赖
 
 | 组件 | 要求 | 说明 |
 | --- | --- | --- |
-| Go | **≥ 1.26.3** | `go.mod` 声明 `go 1.26.3`。Go ≥ 1.21 会自动下载所需工具链，但建议直接装 1.26.3 |
-| Node.js | **≥ 20.9** | Next 16 的 `engines` 下限，容器内用 20.x 或 22.x |
+| Go（源码构建） | **≥ 1.26.3** | `go.mod` 声明 `go 1.26.3`。Go ≥ 1.21 会自动下载所需工具链，但建议直接装 1.26.3 |
+| Node.js（源码构建） | **≥ 20.9** | Next 16 的 `engines` 下限，容器内用 20.x 或 22.x |
 | PostgreSQL | **14+（推荐 16）** | 唯一数据存储，**没有 SQLite 回退** |
 | `rsync` / `zip` | 可选 | 只有 `build.sh` 打包时需要 |
 | 内存 | **≥ 4 GB 可用 + 2 GB swap** | 前端 `next build`（turbopack + React Compiler）很吃内存；不足会被 OOM Killer 杀成 `exit code -9`，日志没有任何报错直接断在半路 |
 
 ---
 
-### 方式一：源码编译为单二进制（推荐）
+### 方式一：源码编译为单二进制
 
 前端必须先导出成静态文件、再嵌进二进制，**三步不能颠倒**：
 
 ```bash
-git clone https://github.com/kutukam/autonomous-pentest-agent.git
-cd autonomous-pentest-agent
+git clone https://github.com/DeepShawn/ARTEX.git
+cd ARTEX
 
 # 1) 前端静态导出 → 产出 web/out
 cd web && npm ci && npm run build:static && cd ..
@@ -117,45 +124,49 @@ cp config.example.json config.json   # 填 database 连接（见下节）
 > 1. `-tags embedui` 会 `//go:embed all:webui/dist`。该目录不存在时**编译直接失败**：`pattern all:webui/dist: no matching files found`。所以第 2 步不能省。
 > 2. 重复构建别写 `cp -r web/out server/webui/dist` —— 目标目录已存在时会变成 `dist/out/`，页面全 404。要么先 `rm -rf`，要么用 `cp -r web/out/. server/webui/dist/`。
 
-也可以让脚本代劳：`./install.sh` 选 **② 本地运行**（会问你数据库，然后自动编译并启动）。注意**选①会失败**，原因是官方镜像已删。
+也可以让脚本代劳：`./install.sh` 选 **② 本地运行**，填写数据库后自动构建前端与后端，并通过 `start.sh` 启动；选 **① 全部 Docker** 会使用本仓库的 GHCR 镜像。
 
 编译产物在 `./apagent`（约 39 MB，静态链接、无外部依赖）。想直接 `go run` 调试用 `./dev.sh`（后端 8787 + 流量代理 8788 + 前端 5173）。
 
 首次访问 http://localhost:8787 会自动跳 `/setup` 设置管理员密码（**用户名固定为 `APAGENT`**，不能改）。
 
-### 方式二：自建 Docker 镜像
+### 方式二：Docker Compose（推荐）
 
-`docker-compose.yml` 里的 `image: autumn27/apagent` 已经拉不到，改成自建。
-
-`Dockerfile` 是**运行镜像**（不在容器里编译），要求先把**对应架构的预编译二进制**放进构建上下文：
+从仓库下载 compose、脚本与 skills，设置数据库密码后即可启动应用和 PostgreSQL：
 
 ```bash
-# 注意路径是 dist/<TARGETARCH>/apagent，不是 build.sh 的 dist/apagent-linux-amd64/
-mkdir -p dist/arm64
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags embedui -trimpath \
-  -o dist/arm64/apagent ./cmd/apagent     # x86 机器换成 dist/amd64/
+git clone https://github.com/DeepShawn/ARTEX.git
+cd ARTEX
+cp .env.example .env
+# 编辑 .env，必须填写 POSTGRES_PASSWORD（建议随机字母数字密码）
+# 默认镜像 ghcr.io/deepshawn/artex:v0.3.16
+# 密码含 @、:、/ 等 URL 特殊字符时，还需填写 URL 编码后的 APAGENT_PG_DSN。
+docker compose pull
+docker compose up -d --wait --wait-timeout 180
+docker compose ps
+```
 
+也可执行 `./install.sh` 选 **① 全部 Docker**。应用地址为 `http://localhost:8787`；代理端口仅绑定 `127.0.0.1:8788`。应用健康检查会读取 `/api/auth/status`，同时验证 API 与 PostgreSQL 可用；LLM 可以留空，稍后在 UI 配置。
+
+镜像由版本 tag 触发的 `release` 工作流中的 `docker` 任务发布；使用前确认该任务已成功。首次发布后需将 GHCR 包设为 Public，才能匿名拉取；私有包需先 `docker login ghcr.io`，使用有包读取权限的账号。
+
+`pgdata` 保存数据库，`./data` 保存工作区和流量记录，`authdata` 保存 JWT 签名密钥，`./skills` 保存技能。更新时保留这些目录和卷；不要执行 `docker compose down -v`。从旧镜像升级前先备份数据库、`data/` 与旧容器的 `/app/jwt.key`；若旧密钥只存在容器里，请先复制到 `data/jwt.key`，新版本首次启动会自动迁移到 `authdata`。
+
+已有部署升级时保留原 Compose 项目名（原目录名或 `docker compose -p <原项目名>`）及挂载路径，避免切换到另一组空数据卷。
+
+**自行构建镜像**：`Dockerfile` 是运行镜像，先准备内嵌前端的 Linux 二进制。下面以 amd64 为例，arm64 将路径与 `GOARCH` 一起替换：
+
+```bash
+# 先按方式一构建 web/out 并复制到 server/webui/dist
+mkdir -p dist/amd64
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedui -trimpath \
+  -ldflags "-s -w -X main.version=0.3.16" -o dist/amd64/apagent ./cmd/apagent
 docker build -t apagent:local .
+# 在 .env 将 APAGENT_IMAGE=apagent、APAGENT_TAG=local，然后：
+docker compose up -d --wait --wait-timeout 180
 ```
 
-用 compose 同时跑应用与数据库：
-
-```yaml
-# docker-compose.override.yml
-services:
-  apagent:
-    image: apagent:local
-    build: .
-```
-
-```bash
-cp .env.example .env     # 必须设置 POSTGRES_PASSWORD
-docker compose up -d     # → http://localhost:8787
-```
-
-> `docker-compose.yml` 里 `${POSTGRES_PASSWORD:?...}` 是故意的：密码为空时 compose 直接报错退出，而不是起一个弱口令数据库。
-> `./data`、`./skills`、`pgdata` 都是绑定挂载，容器重建不丢数据；改 skill 不用重建镜像。
-> 容器内已预装 nmap / playwright(chromium) / ripgrep 等工具，跑 agent 的工具链比裸机省事。
+镜像预装 nmap、Playwright Chromium、ripgrep 等运行工具。直接使用 Release 二进制时，按需要在宿主机安装这些工具。
 
 ### 方式三：前后端分离（低配机器 / 已有 nginx）
 
@@ -194,13 +205,13 @@ server {
 本地编好、打包带走，目标机不需要 Go 和 Node：
 
 ```bash
-./build.sh --release                              # 默认 linux/darwin/windows 的 amd64+arm64
+./build.sh --release                            # 默认五个平台（Windows 仅 amd64）
 APAGENT_TARGETS=linux/arm64 ./build.sh --release  # 只出需要的目标
 ```
 
-产物：`dist/apagent-<version>-<os>-<arch>.zip` + `SHA256SUMS`，zip 内含 `apagent`、`start.sh`（Windows 为 `start.bat`）、`skills/`、`config.example.json`。目标机解压后填 `config.json`，`./start.sh` 即可。
+产物：`dist/apagent-<version>-<os>-<arch>.zip` + `SHA256SUMS`。各包包含程序、启动脚本、`skills/`、`config.example.json` 与 README / LICENSE / NOTICE / CHANGELOG；Linux/macOS 包另含 `reset-password.sh`。Windows 程序为 `apagent.exe`、入口为 `start.bat`；其余平台运行 `./start.sh`。目标机解压后先填写 `config.json`。
 
-> 版本号取自 `git describe --tags --always --dirty`。**仓库没有 tag，所以这里会编译成 commit sha**，而这类"非正式版本"会让页面「一键更新」被禁用——这是有意的保护，避免正式版覆盖本地构建。
+> 版本号默认取自 `git describe --tags --always --dirty`，也可用 `APAGENT_BUILD_VERSION=v0.3.16 ./build.sh --release` 指定。正式发布应使用对应 tag 的干净源码；`dev` 或带提交后缀的开发版本会禁用页面一键更新。默认发布 Linux amd64/arm64、macOS amd64/arm64、Windows amd64 五个平台。
 
 ### 方式五：注册为系统服务（systemd）
 
@@ -254,7 +265,7 @@ CREATE DATABASE apagent OWNER apagent;   -- 可省略，见下
     "user": "apagent", "password": "换成强密码",
     "dbname": "apagent", "sslmode": "disable"
   },
-  "skill_dir": "/opt/apagent/skills"
+  "skill_dir": ""
 }
 ```
 
@@ -268,34 +279,32 @@ export APAGENT_PG_DSN='postgres://apagent:pass@127.0.0.1:5432/apagent?sslmode=di
 ### 部署后自检
 
 ```bash
-curl -s localhost:8787/api/health        # 返回版本号即后端就绪
+curl -fsS localhost:8787/api/health        # 检查进程与版本号
+curl -fsS localhost:8787/api/auth/status   # 检查 API 与 PostgreSQL；首次 initialized=false
 ```
 
-判断标准：日志出现 `backend listening on :8787`、`/api/health` 有响应、浏览器能打开首页并跳 `/setup`（首次）或 `/login`。
+判断标准：日志出现 `backend listening on :8787`、以上接口均返回 200、浏览器能打开首页并跳 `/setup`（首次）或 `/login`。`/api/health` 只报告进程状态，数据库是否可用应结合 `/api/auth/status` 判断。
 
-**忘记密码**：`./reset-password.sh`（按 `config.json` / `APAGENT_PG_DSN` 连库，docker 部署加 `-m docker`）。
+**忘记密码**：Linux/macOS 发布包附带 `./reset-password.sh`，按 `config.json` / `APAGENT_PG_DSN` 连库，本地模式需要 `psql`。Docker 部署在仓库目录执行该脚本并加 `-m docker`。Windows 可在具备 Bash 和 `psql` 的环境中使用仓库里的同名脚本。
 
 ### 目录与持久化
 
 | 路径 | 内容 | 说明 |
 | --- | --- | --- |
-| `data/`（可执行文件同级） | 运行期存储、`jwt.key` | **删掉 `jwt.key` 会导致所有人掉登录** |
+| `data/`（可执行文件同级） | 工作区、流量记录等运行期数据 | 持久化并随数据库一起备份 |
+| `jwt.key`（可执行文件同级） | JWT 签名密钥 | Docker 中通过 `/app/jwt.key` 链接保存于 `authdata` 卷；删除会导致所有人掉登录 |
 | `skills/` | skill 目录 | 优先级：`APAGENT_SKILL_DIR` > `config.json` 的 `skill_dir` > 可执行文件同级 `skills/` |
 | PostgreSQL | 任务 / 双图 / 发现等主数据 | 每次启动幂等重跑 `schema.sql`，**重启即迁移**，无需手动执行 |
 
-> 升级前请备份 `data/` 与数据库。数据库结构只向上迁移，**回退版本不会回退表结构**。
+> 升级前请备份 `data/`、`skills/`、`jwt.key`（Docker 为 `authdata` 卷）与数据库。数据库结构只向上迁移，**回退版本不会回退表结构**。
 
 ---
 
 ## 更新升级
 
-> **前提**：官方分发渠道已失效（镜像 `autumn27/apagent` 已删、Releases 为空），所以**只能从源码重新编译**来升级——见下方[方式五](#方式五从源码编译)。`方式一`（页面一键更新）、`方式三`（pull 镜像）、`方式四`（下载 Releases）都需要官方产物，当前**均不可用**。
+> 更新使用本仓库 [Releases](https://github.com/DeepShawn/ARTEX/releases) 或镜像 `ghcr.io/deepshawn/artex`。数据库启动时自动执行幂等迁移；升级前备份 PostgreSQL、`data/`、`skills/` 和 JWT 密钥。Docker 更新保留 `pgdata` 与 `authdata`，不要删除数据卷。
 
-> 升级只换程序、不动数据：Postgres 数据卷 `pgdata`、`./data`（jwt.key / SQLite 等）、`./skills` 都会保留。**数据库迁移无需手动执行**——`apagent` 每次启动会幂等重跑 `schema.sql`（含 `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`），即“重启即迁移”。升级前仍建议先备份 `./data` 与数据库。
-
-### 方式一：页面一键更新（❌ 当前不可用）
-
-> 该功能从 GitHub Release 下载产物，而本仓库 Releases 为空，所以点了只会报「没有可用更新」。留此说明以备日后恢复发布渠道。
+### 方式一：页面一键更新
 
 在 **系统配置** 页（侧边栏「系统配置」→ `/system/settings`）的**版本与更新**卡片里，可以直接检查并安装新版本，无需登录服务器。
 
@@ -311,53 +320,49 @@ curl -s localhost:8787/api/health        # 返回版本号即后端就绪
 ### 方式二：一键更新脚本
 
 ```bash
-cd autonomous-pentest-agent
+cd ARTEX
 ./update.sh
 ```
 
 脚本先可选 `git pull` 拉取最新代码，再让你选 **① Docker 更新** 或 **② 本地编译更新**（与 `install.sh` 对应）：
 
-- **① Docker**：❌ 拉的是已删除的官方镜像，会失败。改用自建镜像流程（见[部署 · 方式二](#方式二自建-docker-镜像)）。
-- **② 本地**：✅ 可用。重建前端 → 重新编译 `./apagent` → 手动重启进程生效。
+- **① Docker**：拉取 GHCR 镜像，仅重建应用，等待 API 与数据库健康检查通过。PostgreSQL 应保持运行。
+- **② 本地**：重建前端，编译并验证临时二进制，再原子替换 `./apagent`；手动重启进程生效。
 
-> 注意：脚本的编译命令是 `go build -o apagent`，若**程序正在运行**，Linux 会报 `Text file busy`。先把服务停掉，或按[升级 · 方式五](#方式五从源码编译当前唯一可用)用 `go build -o apagent.new` + `mv` 替换。
+> 本地更新先生成 `apagent.next` 再用 `mv` 替换，避免覆盖运行中的文件导致 `Text file busy`；构建失败会保留原二进制。
 
-### 方式三：Docker Compose（手动 · ❌ 当前不可用）
-
-> `docker compose pull apagent` 会因镜像已被删除而失败。自建镜像的升级做法是：重新编译 → `docker build -t apagent:local .` → `docker compose up -d apagent`。
+### 方式三：Docker Compose（手动）
 
 ```bash
-cd autonomous-pentest-agent
+cd ARTEX
 git pull                       # 更新 compose / 脚本（可选）
-# 指定版本：在 .env 设 APAGENT_TAG=v0.2.0；不设则用 latest
+# 指定版本：在 .env 设 APAGENT_TAG=v0.3.16
 docker compose pull apagent
-docker compose up -d apagent     # 换新镜像重启 → 自动迁移 schema
-docker image prune -f          # 清理旧镜像（可选）
+docker compose up -d --no-deps --wait --wait-timeout 180 apagent  # PostgreSQL 保持运行
 ```
 
-### 方式四：预编译二进制（Releases · ❌ 当前不可用）
+### 方式四：预编译二进制（Releases）
 
-> Releases 页面为空。要更新二进制请走[方式五](#方式五从源码编译)，或用 `./build.sh --release` 自己打包。
-
-到 [Releases](https://github.com/kutukam/autonomous-pentest-agent/releases) 下载新版本 zip，停掉旧进程后覆盖 `apagent` 与 `skills/`（保留你的 `config.json` 与 `data/`），重启即可：
+到 [Releases](https://github.com/DeepShawn/ARTEX/releases) 下载新版本 zip 并校验 `SHA256SUMS`，停掉旧进程后替换 `apagent`，按需合并 `skills/`（保留你的 `config.json`、`data/`、`jwt.key` 与自定义技能），重启即可：
 
 ```bash
-cp -r <解压目录>/skills ./ && cp <解压目录>/apagent ./
+cp <解压目录>/apagent ./apagent.next && mv -f apagent.next apagent
+# 按需合并新版 skills，避免覆盖自己修改的同名技能。
 ./start.sh
 ```
 
-### 方式五：从源码编译（✅ 当前唯一可用）
+### 方式五：从源码编译
 
 ```bash
 git pull
 cd web && npm ci && npm run build:static && cd ..
 rm -rf server/webui/dist && mkdir -p server/webui/dist && cp -r web/out/. server/webui/dist/
-CGO_ENABLED=0 go build -tags embedui -trimpath -o apagent.new ./cmd/apagent
-# 用新二进制替换旧的，再重启（start.sh 会自动做优雅关闭）
-mv apagent.new apagent && ./start.sh
+CGO_ENABLED=0 go build -tags embedui -trimpath -o apagent.next ./cmd/apagent
+# 先停止原进程或 systemd 服务，再替换并启动。
+mv -f apagent.next apagent && ./start.sh
 ```
 
-> 直接覆盖运行中的 `apagent` 会得到 `Text file busy`，所以先编到 `apagent.new` 再 `mv`（同分区下 `mv` 是原子替换，比 `cp` 安全）。
+> 直接覆盖运行中的 `apagent` 会得到 `Text file busy`，所以先编到 `apagent.next` 再 `mv`（同分区下 `mv` 是原子替换，比 `cp` 安全）。
 > 重复构建时务必先 `rm -rf server/webui/dist`，否则 `cp -r web/out server/webui/dist` 会生成 `dist/out/` 导致页面 404。
 
 ---
