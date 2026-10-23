@@ -5,9 +5,14 @@ import { fileURLToPath } from "node:url";
 const isExport = process.env.NEXT_EXPORT === "1";
 // Vercel demo：整站走 mock，无后端，无需 /api 反代。
 const isMock = process.env.NEXT_PUBLIC_MOCK === "1";
+// 子路径部署（如 GitHub Pages 项目站点 https://<user>.github.io/<repo>/）：
+// 静态导出时所有资源引用默认是绝对路径 /_next/...，部署到子路径会全部 404。
+// 设 NEXT_PUBLIC_BASE_PATH=/<repo> 即可把前缀写进产物；留空则维持原有的根路径行为。
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.replace(/\/$/, "") || undefined;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   // 避免父目录的 lockfile 影响根目录推断及资源路径生成。
   turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) },
   reactCompiler: true,

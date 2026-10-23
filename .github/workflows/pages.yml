@@ -1,0 +1,67 @@
+name: pages
+
+# 把前端静态站（mock 演示模式）发布到 GitHub Pages。
+#
+# 说明：本项目是 Go + PostgreSQL 的应用，Pages 只能托管静态文件，
+# 所以这里发布的是 web/ 的静态导出产物，并开启 NEXT_PUBLIC_MOCK=1
+# 走内置 mock 数据——纯界面演示，没有后端功能。
+#
+# 资源前缀：项目站点部署在 https://<user>.github.io/<repo>/，
+# 而静态导出默认用绝对路径 /_next/...，故用仓库名注入 NEXT_PUBLIC_BASE_PATH。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署，新的推送会取消排队中的旧任务
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装依赖
+        working-directory: web
+        run: npm ci
+
+      - name: 静态导出（mock 演示模式 + 子路径前缀）
+        working-directory: web
+        env:
+          NEXT_PUBLIC_MOCK: "1"
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build:static
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
