@@ -1,0 +1,229 @@
+name: publish-supplement
+
+# Local Android signing stays outside GitHub. This job receives only a checked
+# public asset archive through the repository's Git Data API, then uploads it
+# with the workflow token after validating the existing desktop release too.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag (for example v0.3.17)
+        required: true
+        type: string
+      blob_sha:
+        description: Single blob SHA or ordered comma-separated SHAs (legacy alias)
+        required: false
+        type: string
+      blob_shas:
+        description: Ordered comma-separated Git Data blob SHAs (maximum 64)
+        required: false
+        type: string
+      archive_sha256:
+        description: SHA256 of the decoded public supplement archive
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-supplement-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      BLOB_SHA: ${{ inputs.blob_sha }}
+      BLOB_SHAS: ${{ inputs.blob_shas }}
+      ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+    steps:
+      - name: Validate fixed repository and input formats
+        env:
+          ACTUAL_REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$ACTUAL_REPOSITORY" = DeepShawn/ARTEX
+          python3 - <<'PY'
+          import os, pathlib, re
+          for key, pattern in {
+              'RELEASE_TAG': r'v[0-9]+\.[0-9]+\.[0-9]+',
+              'ARCHIVE_SHA256': r'[0-9a-f]{64}',
+          }.items():
+              if not re.fullmatch(pattern, os.environ[key]):
+                  raise SystemExit('Invalid input format: ' + key)
+          if bool(os.environ.get('BLOB_SHA')) == bool(os.environ.get('BLOB_SHAS')):
+              raise SystemExit('Supply exactly one of blob_sha or blob_shas')
+          raw = os.environ.get('BLOB_SHAS') or os.environ['BLOB_SHA']
+          if not re.fullmatch(r'[0-9a-f]{40}(?:,[0-9a-f]{40}){0,63}', raw):
+              raise SystemExit('Expected between one and 64 ordered 40-hex blob SHAs')
+          (pathlib.Path(os.environ['RUNNER_TEMP']) / 'supplement-blob-shas.txt').write_text(raw.replace(',', '\n') + '\n')
+          PY
+
+      - name: Read public archive through the Git Data API
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP'])
+          chunks = (temporary / 'supplement-blob-shas.txt').read_text().splitlines()
+          digest = hashlib.sha256()
+          total = 0
+          with (temporary / 'supplement-archive.bin').open('wb') as output:
+              for sha in chunks:
+                  response = subprocess.check_output(['gh', 'api', 'repos/DeepShawn/ARTEX/git/blobs/' + sha])
+                  metadata = json.loads(response)
+                  size = metadata.get('size', 0)
+                  if metadata.get('encoding') != 'base64' or metadata.get('sha') != sha:
+                      raise SystemExit('Unexpected Git Data blob encoding or identity')
+                  if not isinstance(size, int) or not 0 < size <= 64 * 1024 * 1024 - total:
+                      raise SystemExit('Public archive is empty or exceeds the cumulative 64MiB limit')
+                  data = base64.b64decode(''.join(metadata['content'].split()), validate=True)
+                  if len(data) != size:
+                      raise SystemExit('Public archive chunk size mismatch')
+                  digest.update(data)
+                  output.write(data)
+                  total += size
+          if digest.hexdigest() != os.environ['ARCHIVE_SHA256']:
+              raise SystemExit('Assembled public archive SHA256 mismatch')
+          print('Verified assembled public archive from', len(chunks), 'Git Data blobs')
+          PY
+          gh release view "$RELEASE_TAG" --repo DeepShawn/ARTEX \
+            --json tagName,isDraft,url,assets > "$RUNNER_TEMP/desktop-release.json"
+
+      - name: Check archive and extract only the expected public files
+        run: |
+          python3 - <<'PY'
+          import hashlib, io, json, os, pathlib, re, tarfile, zipfile
+
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP'])
+          archive = (temporary / 'supplement-archive.bin').read_bytes()
+          if not 0 < len(archive) <= 64 * 1024 * 1024 or hashlib.sha256(archive).hexdigest() != os.environ['ARCHIVE_SHA256']:
+              raise SystemExit('Public archive size or SHA256 mismatch')
+
+          tag = os.environ['RELEASE_TAG']
+          core_version = tag[1:]
+          release = json.loads((temporary / 'desktop-release.json').read_text())
+          if release.get('tagName') != tag or release.get('isDraft') is not False:
+              raise SystemExit('The requested published release does not exist')
+          desktop = [f'apagent-{core_version}-{target}.zip' for target in (
+              'linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64', 'windows-amd64')]
+          existing = {item['name'] for item in release.get('assets', [])}
+          if not set(desktop) <= existing:
+              raise SystemExit('The existing release is missing a desktop package')
+
+          # Exactly seven regular, flat files; never use extractall on the input.
+          content = {}
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:*') as tar:
+              members = tar.getmembers()
+              if len(members) != 7:
+                  raise SystemExit('The public archive must contain exactly seven flat files')
+              total = 0
+              for item in members:
+                  path = pathlib.PurePosixPath(item.name)
+                  name = str(path)
+                  if not item.isfile() or path.is_absolute() or len(path.parts) != 1 or name in content:
+                      raise SystemExit('Unsafe, non-flat, special or duplicate archive entry')
+                  if not 0 <= item.size <= 64 * 1024 * 1024:
+                      raise SystemExit('Public archive entry is too large')
+                  total += item.size
+                  if total > 128 * 1024 * 1024:
+                      raise SystemExit('Public archive expands beyond the size limit')
+                  stream = tar.extractfile(item)
+                  if stream is None:
+                      raise SystemExit('Public archive entry could not be read')
+                  with stream:
+                      data = stream.read(item.size + 1)
+                  if len(data) != item.size:
+                      raise SystemExit('Truncated public archive entry')
+                  content[name] = data
+
+          apk_pattern = r'artex-' + re.escape(core_version) + r'-android\.[1-9][0-9]*-arm64-v8a\.apk'
+          apks = [name for name in content if re.fullmatch(apk_pattern, name)]
+          if len(apks) != 1:
+              raise SystemExit('Expected one Android APK matching this core release')
+          apk = apks[0]
+          android_version = apk[len('artex-'):-len('-arm64-v8a.apk')]
+          runtime = f'artex-{android_version}-termux-arm64-v8a.tar.gz'
+          supplement = [apk, runtime, 'termux-bootstrap.sh', 'ANDROID-README.md', 'SYSTEM_PROMPT_ENTRYPOINTS.md']
+          expected = set(supplement + ['SHA256SUMS', 'RELEASE_NOTES.md'])
+          if set(content) != expected:
+              raise SystemExit('Unexpected or missing public archive files')
+          if not 0 < len(content['RELEASE_NOTES.md']) <= 256 * 1024:
+              raise SystemExit('Release notes are empty or too large')
+          content['RELEASE_NOTES.md'].decode('utf-8')
+
+          # Verify the public runtime/bootstrap are the exact bytes in the APK.
+          with zipfile.ZipFile(io.BytesIO(content[apk])) as package:
+              if package.testzip() is not None:
+                  raise SystemExit('APK ZIP integrity check failed')
+              if package.read('assets/runtime.tar.gz') != content[runtime]:
+                  raise SystemExit('Public runtime differs from the signed APK runtime')
+              if package.read('assets/bootstrap.sh') != content['termux-bootstrap.sh']:
+                  raise SystemExit('Public bootstrap differs from the signed APK bootstrap')
+              properties = dict(line.split('=', 1) for line in package.read('assets/runtime.properties').decode().splitlines() if '=' in line)
+              if properties.get('runtime.version') != android_version or properties.get('runtime.abi') != 'arm64-v8a':
+                  raise SystemExit('APK runtime version or ABI mismatch')
+              if properties.get('runtime.sha256') != hashlib.sha256(content[runtime]).hexdigest():
+                  raise SystemExit('APK runtime checksum metadata mismatch')
+
+          sums = {}
+          for line in content['SHA256SUMS'].decode('ascii').splitlines():
+              match = re.fullmatch(r'([0-9a-f]{64}) [ *]([A-Za-z0-9][A-Za-z0-9._-]*)', line)
+              if not match or match[2] in sums:
+                  raise SystemExit('Invalid or duplicate checksum line')
+              sums[match[2]] = match[1]
+          if set(sums) != set(desktop + supplement):
+              raise SystemExit('Combined checksums must cover exactly five desktop and five supplement files')
+          for name in supplement:
+              if hashlib.sha256(content[name]).hexdigest() != sums[name]:
+                  raise SystemExit('Supplement checksum mismatch: ' + name)
+
+          destination = temporary / 'artex-supplement'
+          destination.mkdir()
+          for name, data in content.items():
+              (destination / name).write_bytes(data)
+          (temporary / 'desktop-files.txt').write_text('\n'.join(desktop) + '\n')
+          (temporary / 'supplement-files.txt').write_text('\n'.join(supplement) + '\n')
+          print('Verified public archive and all five supplement payloads for', tag)
+          PY
+
+      - name: Download and verify the existing five desktop packages
+        run: |
+          mkdir "$RUNNER_TEMP/artex-desktop"
+          while IFS= read -r asset; do
+            gh release download "$RELEASE_TAG" --repo DeepShawn/ARTEX \
+              --pattern "$asset" --dir "$RUNNER_TEMP/artex-desktop"
+          done < "$RUNNER_TEMP/desktop-files.txt"
+          python3 - <<'PY'
+          import hashlib, os, pathlib, zipfile
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP'])
+          sums = dict((line.split()[1].lstrip('*'), line.split()[0]) for line in
+                      (temporary / 'artex-supplement/SHA256SUMS').read_text().splitlines())
+          for name in (temporary / 'desktop-files.txt').read_text().splitlines():
+              package = temporary / 'artex-desktop' / name
+              digest = hashlib.sha256()
+              with package.open('rb') as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                      digest.update(chunk)
+              if digest.hexdigest() != sums[name]:
+                  raise SystemExit('Existing desktop package checksum mismatch: ' + name)
+              with zipfile.ZipFile(package) as archive:
+                  if archive.testzip() is not None:
+                      raise SystemExit('Desktop ZIP integrity check failed: ' + name)
+              print('Verified existing desktop package:', name)
+          PY
+
+      - name: Publish checked supplement files, then the combined checksum list
+        run: |
+          files=()
+          while IFS= read -r asset; do
+            files+=("$RUNNER_TEMP/artex-supplement/$asset")
+          done < "$RUNNER_TEMP/supplement-files.txt"
+          gh release upload "$RELEASE_TAG" --repo DeepShawn/ARTEX --clobber "${files[@]}"
+          gh release upload "$RELEASE_TAG" --repo DeepShawn/ARTEX --clobber \
+            "$RUNNER_TEMP/artex-supplement/SHA256SUMS"
+          gh release edit "$RELEASE_TAG" --repo DeepShawn/ARTEX \
+            --notes-file "$RUNNER_TEMP/artex-supplement/RELEASE_NOTES.md"
+          printf 'Published five checked supplements and combined SHA256SUMS to %s\n' "$RELEASE_TAG"
