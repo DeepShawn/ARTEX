@@ -128,7 +128,7 @@ resource_args=()
 if [ -d "$source_dir/res" ]; then resource_args=(-S "$source_dir/res"); fi
 "$build_tools/aapt" package -f -m \
   -M "$source_dir/AndroidManifest.xml" -I "$android_jar" \
-  "${resource_args[@]}" -A "$assets_dir" -J "$work_dir/generated" \
+  "${resource_args[@]}" -J "$work_dir/generated" \
   -F "$work_dir/unsigned.apk" --auto-add-overlay \
   --min-sdk-version 26 --target-sdk-version 35 \
   --replace-version --version-code "$version_code" --version-name "$version"
@@ -149,6 +149,10 @@ java sun.tools.jar.Main --create --file "$work_dir/classes.jar" -C "$work_dir/cl
 "$build_tools/d8" --release --min-api 26 --lib "$android_jar" \
   --output "$work_dir/dex" "$work_dir/classes.jar"
 (cd "$work_dir/dex" && zip -q -X "$work_dir/unsigned.apk" classes*.dex)
+# aapt transparently gunzips .gz assets and removes their suffix. Add the assets
+# unchanged after aapt so runtime.tar.gz keeps both its filename and checksum.
+(cd "$source_dir" && zip -q -X -r "$work_dir/unsigned.apk" assets -x assets/runtime.tar.gz \
+  && zip -0 -q -X "$work_dir/unsigned.apk" assets/runtime.tar.gz)
 (cd "$work_dir/apk-native" && zip -0 -q -X "$work_dir/unsigned.apk" lib/arm64-v8a/libartex_abi.so)
 "$build_tools/zipalign" -P 16 -f 4 "$work_dir/unsigned.apk" "$work_dir/aligned.apk"
 "$build_tools/apksigner" sign --ks "$ANDROID_KEYSTORE" \
