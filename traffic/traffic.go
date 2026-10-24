@@ -30,11 +30,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/kutukam/autonomous-pentest-agent/db"
 	"github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
+	"github.com/kutukam/autonomous-pentest-agent/db"
 	mproxy "github.com/lqqyt2423/go-mitmproxy/proxy"
-	_ "modernc.org/sqlite"
 )
 
 const indexSchema = `
@@ -1781,8 +1780,21 @@ func (t *Traffic) reclaimChunk(ctx context.Context, conn *sql.Conn, merges *int)
 		return progressed, nil
 	}
 	// The budget is a constant and PRAGMA arguments cannot be bound as parameters.
-	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA incremental_vacuum(%d)`, reclaimChunkPages)); err != nil {
+	// SQLite yields once per freed page here. Drain the statement: drivers that
+	// implement Exec with a single sqlite3_step otherwise release only one page.
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`PRAGMA incremental_vacuum(%d)`, reclaimChunkPages))
+	if err != nil {
 		return false, fmt.Errorf("回收索引空闲页: %w", err)
+	}
+	for rows.Next() {
+	}
+	err = rows.Err()
+	closeErr := rows.Close()
+	if err != nil {
+		return false, fmt.Errorf("回收索引空闲页: %w", err)
+	}
+	if closeErr != nil {
+		return false, closeErr
 	}
 	if err := conn.QueryRowContext(ctx, `PRAGMA freelist_count`).Scan(&after); err != nil {
 		return false, err

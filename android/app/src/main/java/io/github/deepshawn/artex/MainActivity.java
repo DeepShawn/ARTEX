@@ -64,6 +64,7 @@ public final class MainActivity extends Activity {
     private int pendingAction;
     private String lastResultId = "";
     private String runtimeVersion = "";
+    private String runtimeAbi = "";
     private ValueCallback<Uri[]> fileResult;
 
     @Override public void onCreate(Bundle state) {
@@ -100,7 +101,7 @@ public final class MainActivity extends Activity {
         root.addView(homeScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         addText("你的手机，本地工作台", 26, Color.rgb(16, 29, 51));
-        addText("Android · arm64-v8a · Termux", 14, Color.rgb(87, 103, 125));
+        TextView platform = addText("Android · Termux", 14, Color.rgb(87, 103, 125));
         status = addText("正在检查本地服务…", 18, Color.rgb(8, 127, 140));
         details = addText("前端、Go 后端与 PostgreSQL 都运行在这台手机。LLM 使用你在系统中配置的服务。", 15, Color.rgb(65, 81, 103));
         resultText = addText("", 13, Color.rgb(126, 57, 39));
@@ -115,7 +116,7 @@ public final class MainActivity extends Activity {
         addText("首次准备", 19, Color.rgb(16, 29, 51));
         addText("1. 安装官方 Termux（F-Droid 或 GitHub 稳定版）。\n2. 在 Termux 中启用外部应用调用，再授予本 APK 的运行命令权限。\n3. 点击“初始化 / 启动”，首次安装需要联网；可在 Termux 查看进度。", 15, Color.rgb(65, 81, 103));
         button("复制 Termux 授权配置命令", v -> copySetup());
-        addText("默认地址：127.0.0.1:8787。首次进入后设置管理员密码，用户名 APAGENT。基础工具包含 Python、nmap、ripgrep、curl；浏览器自动化及需要 root 的功能受安卓环境限制。\n\n这是实验版，构建环境没有安卓实机或模拟器，手机运行仍需实际验证。卸载 Termux 会删除数据库与工作区，请先备份。", 14, Color.rgb(87, 103, 125));
+        addText("默认地址：127.0.0.1:8787。首次进入后设置管理员密码，用户名 APAGENT。基础工具包含 Python、nmap、ripgrep、curl；浏览器自动化及需要 root 的功能受安卓环境限制。\n\n这是实验版，已完成 x86_64 安卓模拟器的数据库与后端验证；ARM64 实机及锁屏运行仍需验证。建议使用更新的 Android System WebView。卸载 Termux 会删除数据库与工作区，请先备份。", 14, Color.rgb(87, 103, 125));
 
         web = new WebView(this);
         WebSettings ws = web.getSettings();
@@ -152,7 +153,10 @@ public final class MainActivity extends Activity {
             Properties runtime = new Properties();
             try (InputStream source = getAssets().open("runtime.properties")) { runtime.load(source); }
             runtimeVersion = runtime.getProperty("runtime.version", "");
+            runtimeAbi = runtime.getProperty("runtime.abi", "");
             if (runtimeVersion.isEmpty()) throw new IllegalStateException("运行文件版本信息缺失");
+            if (!runtimeAbi.equals("arm64-v8a") && !runtimeAbi.equals("x86_64")) throw new IllegalStateException("运行文件架构信息无效");
+            platform.setText("Android · " + runtimeAbi + " · Termux");
         } catch (Exception error) {
             setup.setEnabled(false);
             resultText.setText("无法读取运行文件信息：" + error.getMessage());
@@ -168,9 +172,9 @@ public final class MainActivity extends Activity {
                 resultText.setText("上一次初始化已中断。请查看 Termux 的执行情况后重试。");
             }
         }
-        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a")) {
+        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains(runtimeAbi)) {
             setup.setEnabled(false);
-            details.setText("这个安装包需要 Android 8.0+ 和 arm64-v8a 设备。当前设备不支持 ARM64 运行时。");
+            details.setText("这个安装包需要 Android 8.0+ 和 " + runtimeAbi + " 设备。当前设备不支持内附运行时。");
         }
     }
 
@@ -223,7 +227,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("第一次使用").setMessage("1. 安装并打开一次官方 Termux。\n2. 复制下方配置命令，在 Termux 粘贴执行，启用 allow-external-apps。\n3. 返回 ARTEX 点击初始化，授予运行命令权限。通知权限可选。\n4. 首次依赖安装需要联网；Termux 可能请求确认软件源或系统弹窗，请前往完成。\n5. 服务就绪后进入工作台设置密码；在 LLM 配置页填写模型凭据。\n\n只关闭 APK 页面不会停止 Termux 服务。请保留 Termux 通知，长任务需要系统允许其后台运行。仅对已获授权的目标使用工具。").setPositiveButton("复制配置命令", (d, w) -> copySetup()).setNeutralButton("打开 Termux", (d, w) -> openTermux()).setNegativeButton("关闭", null).show();
     }
     private void requestCommand(int action) {
-        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a")) { toast("需要 arm64-v8a 设备"); return; }
+        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains(runtimeAbi)) { toast("需要 " + runtimeAbi + " 设备"); return; }
         if (getPackageManager().getLaunchIntentForPackage("com.termux") == null) { showInstall(); return; }
         if (waiting) { toast("初始化仍在进行，请在 Termux 查看或结束当前命令后再试。"); return; }
         if (action == 1 && ready) { openWorkbench(); return; }
@@ -281,7 +285,7 @@ public final class MainActivity extends Activity {
             String script;
             try (InputStream source = getAssets().open("bootstrap.sh")) { script = new String(readAll(source, 200000), StandardCharsets.UTF_8); }
             status.setText("正在安装 / 启动，请在 Termux 查看进度…");
-            setupDispatched = sendTermux(script, new String[] { "-s", "--", "--runtime-url", url, "--sha256", checksum,
+            setupDispatched = sendTermux(script, new String[] { "-s", "--", "--abi", runtimeAbi, "--runtime-url", url, "--sha256", checksum,
                 "--ready-url", AssetService.getReadyUrl(), "--port", "8787", "--proxy-port", "8788", "--foreground" }, true);
         } catch (Exception error) { setupFailed("无法读取安装文件：" + error.getMessage()); }
     }

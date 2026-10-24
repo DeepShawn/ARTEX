@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [0.3.17-android.3] - 2026-10-24
+
+- 安装 Termux 的 `openssl-tool` 命令行依赖；原子生成并校验数据库密码，恢复尚未建库时遗留的空密码，已有集群和凭据保持不变。
+- Android 流量存储改用 CGO/Bionic SQLite 并启用 FTS5，避免 modernc 的 Linux 旧式系统调用触发 Android seccomp；桌面驱动保持不变。兼容两种驱动的增量空间回收。
+- 初始化失败时保留数据库 stderr 日志与退出码，避免大量下载输出覆盖实际错误。
+- 增加 x86_64 模拟器构建入口、数据库凭据回归测试与模拟器验证记录。ARM64 实机及锁屏存活仍未验证。
+- Android versionCode 升至 4，沿用原签名；Windows、Linux、macOS 发布包保持 0.3.17。
+
 ## [0.3.17-android.2] - 2026-10-24
 
 - 修复后台安装遇到 OpenSSL 等软件包配置文件确认时，因标准输入为 `/dev/null` 而中断的问题。保留已有配置，并在重试时恢复中断的软件包配置。

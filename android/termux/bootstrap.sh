@@ -9,6 +9,7 @@ usage() {
 Usage: bash bootstrap.sh --runtime-url URL --sha256 HEX [options]
        bash bootstrap.sh --runtime-file FILE [--sha256 HEX] [options]
 Options:
+  --abi ABI          Runtime architecture: arm64-v8a (default), x86_64 (emulator).
   --port PORT        Local UI/API port (default: 8787).
   --proxy-port PORT  Local recording proxy (default: 8788; 0 disables it).
   --pg-port PORT     This installation PostgreSQL port (default: 15432).
@@ -18,10 +19,10 @@ Options:
 All services bind to 127.0.0.1. Reinstalling retains PostgreSQL, settings, skills and JWT.
 EOF
 }
-runtime_url='' runtime_file='' expected_sha='' requested_port='' requested_proxy='' requested_pg='' ready_url='' foreground=0
+runtime_url='' runtime_file='' expected_sha='' requested_port='' requested_proxy='' requested_pg='' ready_url='' foreground=0 runtime_abi=arm64-v8a
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    --runtime-url|--runtime-file|--sha256|--port|--proxy-port|--pg-port|--home|--ready-url)
+    --runtime-url|--runtime-file|--sha256|--port|--proxy-port|--pg-port|--home|--ready-url|--abi)
       [[ "$#" -ge 2 ]] || die "Missing value for $1"
       case "$1" in
         --runtime-url) runtime_url="$2" ;;
@@ -32,6 +33,7 @@ while [[ "$#" -gt 0 ]]; do
         --pg-port) requested_pg="$2" ;;
         --home) ARTEX_HOME="$2" ;;
         --ready-url) ready_url="$2" ;;
+        --abi) runtime_abi="$2" ;;
       esac
       shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -45,7 +47,10 @@ done
 [[ -z "$runtime_url" || -n "$expected_sha" ]] || die 'Downloaded runtimes require --sha256.'
 command -v pkg >/dev/null || die 'Run this script inside Termux (official F-Droid or GitHub distribution).'
 [[ "$(id -u)" != 0 ]] || die 'Run as the regular Termux user, without su/root.'
-case "$(uname -m)" in aarch64|arm64) ;; *) die 'This runtime requires an Android arm64-v8a device.' ;; esac
+case "$runtime_abi:$(uname -m)" in
+  arm64-v8a:aarch64|arm64-v8a:arm64|x86_64:x86_64) ;;
+  *) die "This runtime requires an Android $runtime_abi device." ;;
+esac
 
 ARTEX_HOME="${ARTEX_HOME:-$HOME/.local/share/artex}"
 mkdir -p -- "$ARTEX_HOME/run" "$ARTEX_HOME/config"
@@ -66,7 +71,7 @@ if ! dpkg --force-confold --configure -a < /dev/null; then
   pkg install "${package_options[@]}" --fix-broken < /dev/null \
     || die 'Package recovery failed. In Termux run: dpkg --configure -a; apt --fix-broken install. Then retry ARTEX initialization.'
 fi
-pkg install "${package_options[@]}" postgresql python nmap ripgrep curl tar coreutils openssl ca-certificates jq util-linux nodejs-lts < /dev/null \
+pkg install "${package_options[@]}" postgresql python nmap ripgrep curl tar coreutils openssl openssl-tool ca-certificates jq util-linux nodejs-lts < /dev/null \
   || die 'Package installation failed. In Termux run: dpkg --configure -a; apt --fix-broken install. Keep existing configuration files when asked, then retry ARTEX initialization.'
 exec 8> "$ARTEX_HOME/run/install.lock"
 flock -w 30 8 || die 'Another ARTEX installation is in progress.'
@@ -147,19 +152,35 @@ if old_pid="$(artex_pg_pid)"; then
   old_pg_port="$(sed -n '4p' "$ARTEX_PGDATA/postmaster.pid")"
   [[ "$old_pg_port" == "$ARTEX_PG_PORT" ]] || die 'Stop this installation before changing its PostgreSQL port.'
 fi
+if [[ ! -s "$ARTEX_HOME/config/postgres.password" ]]; then
+  [[ ! -f "$ARTEX_PGDATA/PG_VERSION" ]] || die 'Existing database credential file is missing or empty; it was not reset.'
+  # openssl is the library package; its CLI is supplied by openssl-tool. Older
+  # installs could leave an empty password when that command was unavailable.
+  # Generate and check in staging so failure never truncates a saved credential.
+  openssl rand -hex 24 > "$stage/new-postgres.password" \
+    || die 'Database credential generation failed; existing credentials were not changed.'
+  IFS= read -r database_password < "$stage/new-postgres.password"
+  [[ "$database_password" =~ ^[a-f0-9]{48}$ ]] || die 'Database credential generator returned an invalid value.'
+  chmod 600 "$stage/new-postgres.password"
+  mv -f -- "$stage/new-postgres.password" "$ARTEX_HOME/config/postgres.password"
+fi
+database_password=''
+IFS= read -r database_password < "$ARTEX_HOME/config/postgres.password" || [[ -n "$database_password" ]]
+[[ "$database_password" =~ ^[a-f0-9]{48}$ ]] || die 'Invalid installation database credential file; existing credentials and database were preserved.'
+unset database_password
 artex_stop_backend
 printf 'ARTEX_PORT=%s\nARTEX_PROXY_PORT=%s\nARTEX_PG_PORT=%s\n' \
   "$ARTEX_PORT" "$ARTEX_PROXY_PORT" "$ARTEX_PG_PORT" > "$ARTEX_HOME/config/ports.env"
-if [[ ! -f "$ARTEX_HOME/config/postgres.password" ]]; then
-  [[ ! -f "$ARTEX_PGDATA/PG_VERSION" ]] || die 'Existing database credential file is missing; it was not reset.'
-  openssl rand -hex 24 > "$ARTEX_HOME/config/postgres.password"
-fi
 if [[ ! -f "$ARTEX_PGDATA/PG_VERSION" ]]; then
   [[ ! -e "$ARTEX_PGDATA" ]] || die 'PostgreSQL path already exists without a recognized cluster; refusing to overwrite it.'
   info 'Initializing this installation PostgreSQL cluster...'
-  initdb -D "$stage/new-postgres" -U artex --encoding=UTF8 --locale=C \
+  if ! initdb -D "$stage/new-postgres" -U artex --encoding=UTF8 --locale=C \
     --auth-local=trust --auth-host=scram-sha-256 --pwfile="$ARTEX_HOME/config/postgres.password" \
-    > "$ARTEX_LOGS/initdb.log" 2>&1 || die "PostgreSQL initialization failed; inspect $ARTEX_LOGS/initdb.log"
+    < /dev/null > "$ARTEX_LOGS/initdb.log" 2>&1 8>&- 9>&-; then
+    printf '[ARTEX] PostgreSQL initialization log (last 80 lines):\n' >&2
+    tail -n 80 "$ARTEX_LOGS/initdb.log" >&2
+    die "PostgreSQL initialization failed; full log: $ARTEX_LOGS/initdb.log"
+  fi
   printf '%s\n' 'ARTEX managed cluster' > "$stage/new-postgres/.artex-owned"
   mv -- "$stage/new-postgres" "$ARTEX_PGDATA"
 fi

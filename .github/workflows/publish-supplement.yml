@@ -42,8 +42,18 @@ jobs:
       ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
     steps:
       - uses: actions/checkout@v4
-      - name: Test noninteractive package configuration recovery
-        run: python3 android/tests/test-package-bootstrap.py
+      - name: Test package configuration and database credential recovery
+        run: |
+          python3 android/tests/test-package-bootstrap.py
+          python3 android/tests/test-database-credential.py
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Test traffic storage with desktop and Android SQLite drivers
+        run: |
+          go test ./traffic
+          CGO_ENABLED=1 go test -tags artex_android_sqlite_test,sqlite_fts5 ./traffic
       - name: Validate fixed repository and input formats
         env:
           ACTUAL_REPOSITORY: ${{ github.repository }}

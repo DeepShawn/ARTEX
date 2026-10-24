@@ -2,7 +2,9 @@
 
 这是面向 **Android 8.0 及更新系统、arm64-v8a** 手机的 Android 界面，与同一台手机上的 Termux 配合运行。Go 后端、PostgreSQL 和命令行工具在 Termux 中执行，APK 使用 WebView 打开手机本地的 ARTEX 页面。它不要求另一台服务器，也不是把桌面 Linux 二进制直接当成 Android 程序运行。
 
-**当前没有 Android 实机或模拟器运行验证。** 构建成功或 APK 签名校验通过不代表已验证手机上的权限授权、Termux 命令回调、数据库启动、WebView 或锁屏运行。请按本文最后的检查项在设备上验证；具体构建结果以对应 Release 说明为准。
+**`.3` 已完成 x86_64 Android 模拟器的本地数据库与后端验证。** ARM64 发布包完成交叉编译、签名和 ELF 检查，尚未完成 ARM64 实机运行验证。模拟器环境、实际通过项与限制见 [验证记录](https://github.com/DeepShawn/ARTEX/blob/android-v0.3.17-android.3/android/VALIDATION.md)。手机的后台和锁屏行为仍需实机确认。
+
+前端需要较新的 **Android System WebView / Chrome（建议 111+）**。Android 8.0 是 APK 最低系统版本；系统内置的陈旧 WebView 可能无法运行生产页面，请先更新。
 
 ## 安装与首次启动
 
@@ -24,13 +26,13 @@
 
 Termux 的 `RUN_COMMAND` 接口从 0.95 提供，本文使用的标准输入和命令结果回调需要 **Termux ≥ 0.109**；实际使用建议选择最新稳定版。ARTEX APK 是独立应用，不使用 Termux 的共享用户身份，也不需要与 Termux 使用相同签名。若另外安装 Termux:API 等官方插件，它们与 Termux 必须来自相同发行来源，不能混装 F-Droid 与 GitHub 签名的插件。
 
-当前推荐 `artex-0.3.17-android.2-arm64-v8a.apk`（versionCode 3），与 Windows、Linux、macOS 构建统一发布在 [v0.3.17 Release](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.17)，并附带 SHA256 校验文件。`.2` 修复后台安装 OpenSSL 时配置确认中断的问题，沿用 `.1` 的签名，可直接覆盖安装。后续覆盖安装 APK 需要使用相同签名；不要为了绕过签名冲突而先删除 Termux。Android 运行时与桌面平台的发布包不同，不应通过桌面版压缩包覆盖手机上的可执行文件。
+当前推荐 `artex-0.3.17-android.3-arm64-v8a.apk`（versionCode 4），与 Windows、Linux、macOS 构建统一发布在 [v0.3.17 Release](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.17)，并附带 SHA256 校验文件。`.3` 修复 PostgreSQL 密码生成依赖与 Android SQLite 启动问题，并保留 `.2` 的软件包配置恢复修复；沿用原签名，可直接覆盖安装。后续覆盖安装 APK 需要使用相同签名；不要为了绕过签名冲突而先删除 Termux。Android 运行时与桌面平台的发布包不同，不应通过桌面版压缩包覆盖手机上的可执行文件。
 
 ### 安装失败后的恢复
 
 如果出现 `RunCommandService requires allow-external-apps`，按上面的第 2 步在 Termux 内执行授权配置命令；这个开关不能由 ARTEX 跨应用沙箱自行写入。
 
-如果旧版安装日志出现 `openssl.cnf`、`end of file on stdin at conffile prompt`，说明软件包要求确认配置文件，但后台命令没有可交互的标准输入。安装 `.2` 后再次初始化会保留已有配置并尝试恢复中断的配置。也可以先在 Termux 手工修复：
+如果旧版安装日志出现 `openssl.cnf`、`end of file on stdin at conffile prompt`，说明软件包要求确认配置文件，但后台命令没有可交互的标准输入。安装 `.3` 后再次初始化会保留已有配置并尝试恢复中断的配置。也可以先在 Termux 手工修复：
 
 ```sh
 dpkg --configure -a
@@ -38,6 +40,8 @@ apt --fix-broken install
 ```
 
 遇到 `Y/I/N/O/D/Z` 配置文件询问时，按回车使用默认 `N`，保留现有配置。完成后返回 ARTEX 再次点击初始化。`-y` 只回答 apt 的确认，不会替 dpkg 回答这种问题；新版单独传入 `--force-confold` 并设置非交互环境。不要删除 Termux 数据或 PostgreSQL 目录。
+
+如果旧版出现 `PostgreSQL initialization failed`，安装 `.3` 后再次初始化。Termux 的 `openssl` 软件包只有库，命令行程序属于 `openssl-tool`；旧版在命令缺失时可能留下空密码文件。新版补齐依赖，并仅在尚未建成数据库时修复空密码。已有集群的凭据不会自动重置，也不需要删除数据库。初始化失败时，APK 会保留 stderr 中的数据库日志尾部。
 
 ## 本地运行方式与权限
 
@@ -82,7 +86,7 @@ APK 自身的数据与 Termux 数据属于不同应用沙箱。卸载界面 APK 
 
 ## 设备验证
 
-此版本尚未完成以下实机验证。首次使用时建议只验证初始化、登录与空任务列表，不直接启动扫描：
+模拟器验证的范围见 [VALIDATION.md](https://github.com/DeepShawn/ARTEX/blob/android-v0.3.17-android.3/android/VALIDATION.md)。以下仍应在目标 ARM64 手机上确认；首次使用建议先验证初始化、登录与空任务列表：
 
 - 未安装 Termux、未授权命令权限、未启用 `allow-external-apps` 时，应用应给出可操作的提示，不能一直显示启动中。
 - 点击初始化后能看到依赖准备结果；失败时能查看退出码和错误信息。再次初始化应保留数据库与已有登录设置。
@@ -97,7 +101,7 @@ APK 自身的数据与 Termux 数据属于不同应用沙箱。卸载界面 APK 
 
 构建主机使用 Linux x86_64、Go 1.26.10、Node.js 22、Java 21，以及 `curl`、`unzip`、`zip`、GNU `tar`、`sha256sum`、Python 3。Java 必须包含编译器与打包模块；完整 JDK 可直接使用，部分发行版的 JRE 也可用 `java com.sun.tools.javac.Main -version` 验证。构建过程不依赖 Gradle 或 Android Studio。
 
-`android/prepare-toolchain.sh` 从 Google 官方下载并校验固定版本的 Android SDK Build Tools 35.0.1、Android 35 平台与 NDK r28c。首次下载约 848 MB，解包与缓存约占 3 GB。NDK 用于将 Go 后端交叉编译为真正的 Android arm64 程序；开启 CGO 使用 Android 系统 DNS，并按 16 KB 内存页要求链接。APK 中的 ARM64 标记库使 Android 安装器识别 `arm64-v8a`。这与手机端运行时工具的安装过程是两套独立流程。
+`android/prepare-toolchain.sh` 从 Google 官方下载并校验固定版本的 Android SDK Build Tools 35.0.1、Android 35 平台与 NDK r28c。首次下载约 848 MB，解包与缓存约占 3 GB。NDK 用于将 Go 后端交叉编译为真正的 Android arm64 程序；开启 CGO 使用 Android 系统 DNS 与 Bionic SQLite（启用 FTS5），并按 16 KB 内存页要求链接。桌面构建保留 modernc SQLite 驱动。APK 中的 ARM64 标记库使 Android 安装器识别 `arm64-v8a`。这与手机端运行时工具的安装过程是两套独立流程。
 
 首次构建前，请在仓库外准备自己的发布 keystore。私钥与密码文件应保持私密并独立备份：后续 APK 升级必须使用同一签名密钥。构建脚本不会生成或发布私钥，也不会把它复制进 APK。示例变量只包含文件路径，不含密码值：
 
@@ -108,15 +112,19 @@ export ANDROID_KEYSTORE_PASSWORD_FILE="/private/keystore-password.txt"
 export ANDROID_KEY_ALIAS=artex
 
 bash android/prepare-toolchain.sh
-APAGENT_BUILD_VERSION=0.3.17-android.2 ANDROID_VERSION_CODE=3 \
+APAGENT_BUILD_VERSION=0.3.17-android.3 ANDROID_VERSION_CODE=4 \
   APAGENT_PACKAGE_DIR="$PWD/dist/android-v0.3.17" bash android/build.sh
-python3 android/verify-apk.py dist/android-v0.3.17/artex-0.3.17-android.2-arm64-v8a.apk
+python3 android/verify-apk.py dist/android-v0.3.17/artex-0.3.17-android.3-arm64-v8a.apk
 ```
 
 密码文件应仅有一行，并设为仅本人可读；也可用 `ANDROID_KEYSTORE_PASSWORD` 环境变量提供密码。只有私钥密码与 keystore 密码不同时，才额外设置 `ANDROID_KEY_PASSWORD_FILE` 或 `ANDROID_KEY_PASSWORD`。`GO=/path/to/go` 可选择 Go 编译器。已有经过确认的生产前端导出时，可设置 `APAGENT_SKIP_FRONTEND=1` 复用 `server/webui/dist`；默认会重新安装前端依赖并导出生产页面。
 
-脚本生成签名 APK 与其 `.sha256` 文件，并在 `android/app/src/main/assets/` 生成 runtime 压缩包、元数据和 bootstrap。它们及 `android/build/` 均被 Git 忽略。runtime 包内含程序、内置 skills、Termux 脚本、部署说明、`LICENSE`、`NOTICE` 与 `SOURCE.txt`；APK 也直接附带许可证、署名和源码地址。Android 版本默认对应标签 `android-v<Android版本>`（本版为 `android-v0.3.17-android.2`），可通过 `APAGENT_SOURCE_REF` 指定其他源码标签。原始四端核心源码仍为 `v0.3.17`。
+脚本生成签名 APK 与其 `.sha256` 文件，并在 `android/app/src/main/assets/` 生成 runtime 压缩包、元数据和 bootstrap。它们及 `android/build/` 均被 Git 忽略。runtime 包内含程序、内置 skills、Termux 脚本、部署说明、`LICENSE`、`NOTICE` 与 `SOURCE.txt`；APK 也直接附带许可证、署名和源码地址。Android 版本默认对应标签 `android-v<Android版本>`（本版为 `android-v0.3.17-android.3`），可通过 `APAGENT_SOURCE_REF` 指定其他源码标签。原始四端核心源码仍为 `v0.3.17`。
 
 可在有 `dpkg` 和 `dpkg-deb` 的 Linux 主机运行 `python3 android/tests/test-package-bootstrap.py`，用隔离的软件包根目录复现配置确认 EOF，并验证后台升级保留配置、恢复中断、修复依赖三个分支。测试不会配置主机软件包，也不能代替 Android 实机验证。
+
+`python3 android/tests/test-database-credential.py` 另外验证首次凭据生成、空密码恢复、已有凭据保留、随机生成失败及已有集群拒绝重置等 6 个分支。流量存储可分别运行 `go test ./traffic` 与 `CGO_ENABLED=1 go test -tags artex_android_sqlite_test,sqlite_fts5 ./traffic`。
+
+仅用于模拟器时，可设置 `ANDROID_RUNTIME_ABI=x86_64` 构建本机架构测试 APK；默认发布架构始终为 `arm64-v8a`。
 
 发布时应先提交源码，再构建对应版本。SDK/NDK 的版本与下载 SHA256 固定；`SOURCE_DATE_EPOCH` 可显式指定 runtime 压缩包的时间，默认取当前提交时间，无 Git 元数据的源码压缩包则使用 0。完整 APK 的二进制内容还会受 Java/Go 版本、签名密钥与打包文件时间影响，因此不宣称不同环境下必然逐字节相同。源码与构建脚本可从该版本的 GitHub 标签或 Release 自动提供的源码压缩包取得。

@@ -13,10 +13,10 @@ import tempfile
 import zipfile
 
 
-def check_elf(data, interpreter=False):
+def check_elf(data, interpreter=False, machine=183):
     header = struct.unpack_from("<16sHHIQQQIHHHHHH", data)
     assert data[:6] == b"\x7fELF\x02\x01", "Expected little-endian ELF64"
-    assert header[1:3] == (3, 183), "Expected ARM64 PIE/shared object"
+    assert header[1:3] == (3, machine), "Unexpected ELF architecture or executable type"
     programs = [struct.unpack_from("<IIQQQQQQ", data, header[5] + i * header[9]) for i in range(header[10])]
     loads = [p for p in programs if p[0] == 1]
     assert loads and all(p[7] >= 16384 for p in loads), "ELF does not support 16KB pages"
@@ -30,11 +30,13 @@ def main():
     with zipfile.ZipFile(apk) as archive:
         assert archive.testzip() is None, "APK ZIP CRC failure"
         assert "classes.dex" in archive.namelist(), "Application code missing"
-        native = [name for name in archive.namelist() if name.startswith("lib/") and name.endswith(".so")]
-        assert native == ["lib/arm64-v8a/libartex_abi.so"], native
-        check_elf(archive.read(native[0]))
         properties = dict(line.split("=", 1) for line in archive.read("assets/runtime.properties").decode().splitlines() if "=" in line)
-        assert properties["runtime.abi"] == "arm64-v8a"
+        abi = properties["runtime.abi"]
+        assert abi in ("arm64-v8a", "x86_64"), abi
+        machine = 183 if abi == "arm64-v8a" else 62
+        native = [name for name in archive.namelist() if name.startswith("lib/") and name.endswith(".so")]
+        assert native == ["lib/" + abi + "/libartex_abi.so"], native
+        check_elf(archive.read(native[0]), machine=machine)
         runtime = archive.read("assets/runtime.tar.gz")
         assert hashlib.sha256(runtime).hexdigest() == properties["runtime.sha256"], "Bundled runtime SHA256 mismatch"
         bootstrap = archive.read("assets/bootstrap.sh")
@@ -53,7 +55,7 @@ def main():
         version = archive.extractfile(members["VERSION"]).read().decode().strip()
         assert version == properties["runtime.version"], "Runtime version mismatch"
         backend = archive.extractfile(members["apagent"]).read()
-        check_elf(backend, interpreter=True)
+        check_elf(backend, interpreter=True, machine=machine)
         assert members["apagent"].mode & 0o100, "Backend is not executable"
     reader = shutil.which("readelf")
     if not reader:
@@ -66,7 +68,7 @@ def main():
         dynamic = subprocess.check_output([reader, "-d", str(binary)], text=True)
         libraries = set(re.findall(r"\(NEEDED\).*?\[(.*?)\]", dynamic))
         assert "libc.so" in libraries and libraries <= {"libc.so", "libdl.so", "liblog.so", "libm.so"}, libraries
-    print("PASS: APK contents, runtime SHA256, ARM64 Android ELF, system DNS, 16KB alignment and bootstrap protocol:", version)
+    print("PASS: APK contents, runtime SHA256,", abi, "Android ELF, system DNS, 16KB alignment and bootstrap protocol:", version)
 
 
 if __name__ == "__main__":
