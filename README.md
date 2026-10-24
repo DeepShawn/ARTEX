@@ -9,6 +9,8 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 📦 **ARTEX 分发渠道**：[GitHub Releases](https://github.com/DeepShawn/ARTEX/releases) 提供内嵌前端的预编译包，Docker 镜像发布到 `ghcr.io/deepshawn/artex`。当前发布版本：**v0.3.16**。
 
+📱 **Android arm64-v8a 实验版**：[APK 下载](https://github.com/DeepShawn/ARTEX/releases/tag/android-v0.3.16.1) · [安装说明](android/README.md)。APK 与同一台手机上的 Termux 配合运行后端、PostgreSQL 和工具；无需远程 ARTEX 服务器。需要 Android 8.0+，尚未完成安卓实机验证。
+
 </div>
 
 ---

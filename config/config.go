@@ -34,6 +34,8 @@ type Config struct {
 // the data/ store). It is the directory the running binary lives in, so a
 // distributed executable keeps its files next to itself on any OS (Windows,
 // Linux, …) regardless of the working directory it is launched from.
+// APAGENT_BASE_DIR overrides it for installations that separate runtime files
+// from persistent state, such as Android with Termux.
 //
 // When launched via `go run`, the binary is throwaway: it sits either in a temp
 // build dir (cache miss → fresh link) OR straight inside the Go build cache
@@ -41,6 +43,11 @@ type Config struct {
 // current working directory so dev artifacts (data/, transcripts) and config
 // resolve against the project dir, not the throwaway binary's location.
 func BaseDir() string {
+	// Android/Termux keeps the replaceable runtime separate from persistent
+	// configuration, workspace and JWT key.
+	if dir := strings.TrimSpace(os.Getenv("APAGENT_BASE_DIR")); dir != "" {
+		return dir
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "."

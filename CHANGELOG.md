@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.3.16-android.1] - 2026-10-24
+
+### Android 实验版
+
+- 新增 Android 8.0+、arm64-v8a APK，通过本机 WebView 访问同机 Termux 中的 Go 后端、PostgreSQL 和工具链。
+- APK 内附 Android 原生运行文件，使用系统域名解析器；增加 Termux 初始化、SHA256 校验、独立数据库与本机监听、启动/停止及日志管理。
+- 增加 `APAGENT_BASE_DIR`，将可替换运行文件与数据库、配置、工作区和 JWT 密钥分开保存。
+- 首次配置由用户点击触发，需安装官方 Termux 并授权运行命令接口；桌面 Playwright、root 权限及安卓后台存活不做保证。
+- 该版本尚未完成安卓实机或模拟器验证，作为独立 Android 预发布提供，不替换桌面版最新 Release。
+
 ## [0.3.16] - 2026-10-23
 
 ### 部署与分发

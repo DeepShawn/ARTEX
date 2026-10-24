@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+func TestBaseDirOverrideKeepsStateOutsideRuntime(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("APAGENT_BASE_DIR", dir)
+	t.Setenv("APAGENT_SKILL_DIR", "")
+	t.Setenv("APAGENT_CONFIG", filepath.Join(dir, "missing.json"))
+	if got := BaseDir(); got != dir {
+		t.Fatalf("base directory = %q, want %q", got, dir)
+	}
+	if got := SkillDir(); got != filepath.Join(dir, "skills") {
+		t.Fatalf("skill directory = %q", got)
+	}
+}
+
 func TestPostgresDSNPrecedence(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")

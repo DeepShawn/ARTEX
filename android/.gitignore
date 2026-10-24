@@ -1,0 +1,10 @@
+/build/
+/app/src/main/assets/runtime.tar.gz
+/app/src/main/assets/runtime.properties
+/app/src/main/assets/bootstrap.sh
+/app/src/main/assets/LICENSE.txt
+/app/src/main/assets/NOTICE.txt
+/app/src/main/assets/SOURCE.txt
+*.jks
+*.keystore
+*.p12
