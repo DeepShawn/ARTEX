@@ -41,6 +41,9 @@ jobs:
       BLOB_SHAS: ${{ inputs.blob_shas }}
       ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
     steps:
+      - uses: actions/checkout@v4
+      - name: Test noninteractive package configuration recovery
+        run: python3 android/tests/test-package-bootstrap.py
       - name: Validate fixed repository and input formats
         env:
           ACTUAL_REPOSITORY: ${{ github.repository }}
@@ -147,6 +150,9 @@ jobs:
           android_version = apk[len('artex-'):-len('-arm64-v8a.apk')]
           runtime = f'artex-{android_version}-termux-arm64-v8a.tar.gz'
           supplement = [apk, runtime, 'termux-bootstrap.sh', 'ANDROID-README.md', 'SYSTEM_PROMPT_ENTRYPOINTS.md']
+          # Keep historical Android downloads, with checksums verified as well.
+          legacy_pattern = r'artex-' + re.escape(core_version) + r'-android\.[1-9][0-9]*-(?:arm64-v8a\.apk|termux-arm64-v8a\.tar\.gz)'
+          legacy = sorted(name for name in existing if re.fullmatch(legacy_pattern, name) and name not in supplement)
           expected = set(supplement + ['SHA256SUMS', 'RELEASE_NOTES.md'])
           if set(content) != expected:
               raise SystemExit('Unexpected or missing public archive files')
@@ -174,8 +180,8 @@ jobs:
               if not match or match[2] in sums:
                   raise SystemExit('Invalid or duplicate checksum line')
               sums[match[2]] = match[1]
-          if set(sums) != set(desktop + supplement):
-              raise SystemExit('Combined checksums must cover exactly five desktop and five supplement files')
+          if set(sums) != set(desktop + supplement + legacy):
+              raise SystemExit('Combined checksums must cover desktop, current supplements and historical Android files')
           for name in supplement:
               if hashlib.sha256(content[name]).hexdigest() != sums[name]:
                   raise SystemExit('Supplement checksum mismatch: ' + name)
@@ -184,35 +190,36 @@ jobs:
           destination.mkdir()
           for name, data in content.items():
               (destination / name).write_bytes(data)
-          (temporary / 'desktop-files.txt').write_text('\n'.join(desktop) + '\n')
+          (temporary / 'existing-files.txt').write_text('\n'.join(desktop + legacy) + '\n')
           (temporary / 'supplement-files.txt').write_text('\n'.join(supplement) + '\n')
           print('Verified public archive and all five supplement payloads for', tag)
           PY
 
-      - name: Download and verify the existing five desktop packages
+      - name: Download and verify existing desktop and historical Android packages
         run: |
           mkdir "$RUNNER_TEMP/artex-desktop"
           while IFS= read -r asset; do
             gh release download "$RELEASE_TAG" --repo DeepShawn/ARTEX \
               --pattern "$asset" --dir "$RUNNER_TEMP/artex-desktop"
-          done < "$RUNNER_TEMP/desktop-files.txt"
+          done < "$RUNNER_TEMP/existing-files.txt"
           python3 - <<'PY'
           import hashlib, os, pathlib, zipfile
           temporary = pathlib.Path(os.environ['RUNNER_TEMP'])
           sums = dict((line.split()[1].lstrip('*'), line.split()[0]) for line in
                       (temporary / 'artex-supplement/SHA256SUMS').read_text().splitlines())
-          for name in (temporary / 'desktop-files.txt').read_text().splitlines():
+          for name in (temporary / 'existing-files.txt').read_text().splitlines():
               package = temporary / 'artex-desktop' / name
               digest = hashlib.sha256()
               with package.open('rb') as stream:
                   for chunk in iter(lambda: stream.read(1024 * 1024), b''):
                       digest.update(chunk)
               if digest.hexdigest() != sums[name]:
-                  raise SystemExit('Existing desktop package checksum mismatch: ' + name)
-              with zipfile.ZipFile(package) as archive:
-                  if archive.testzip() is not None:
-                      raise SystemExit('Desktop ZIP integrity check failed: ' + name)
-              print('Verified existing desktop package:', name)
+                  raise SystemExit('Existing package checksum mismatch: ' + name)
+              if package.suffix in ('.zip', '.apk'):
+                  with zipfile.ZipFile(package) as archive:
+                      if archive.testzip() is not None:
+                          raise SystemExit('ZIP integrity check failed: ' + name)
+              print('Verified existing package:', name)
           PY
 
       - name: Publish checked supplement files, then the combined checksum list

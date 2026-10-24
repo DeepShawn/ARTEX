@@ -11,9 +11,9 @@
 # Optional inputs:
 #   ANDROID_SDK_ROOT              SDK prepared by prepare-toolchain.sh
 #   ANDROID_NDK_ROOT              Defaults to the prepared r28c NDK
-#   APAGENT_BUILD_VERSION         Defaults to 0.3.17-android.1
-#   ANDROID_VERSION_CODE          Defaults to 2
-#   APAGENT_SOURCE_REF            Defaults to the matching v<core-version> tag
+#   APAGENT_BUILD_VERSION         Defaults to 0.3.17-android.2
+#   ANDROID_VERSION_CODE          Defaults to 3
+#   APAGENT_SOURCE_REF            Defaults to android-v<Android-version>
 #   APAGENT_SKIP_FRONTEND=1        Reuse an already exported production frontend
 #   APAGENT_SKIP_NPM_CI=1          Reuse installed npm dependencies
 #   GO=/path/to/go                Go compiler, defaults to go on PATH
@@ -23,9 +23,9 @@ set -euo pipefail
 android_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_dir="$(dirname "$android_dir")"
 cd "$repo_dir"
-version="${APAGENT_BUILD_VERSION:-0.3.17-android.1}"
+version="${APAGENT_BUILD_VERSION:-0.3.17-android.2}"
 version="${version#v}"
-version_code="${ANDROID_VERSION_CODE:-2}"
+version_code="${ANDROID_VERSION_CODE:-3}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-android\.[0-9]+$ ]] || { echo 'Expected an Android version such as 0.3.17-android.1' >&2; exit 1; }
 [[ "$version_code" =~ ^[1-9][0-9]*$ ]] || { echo 'ANDROID_VERSION_CODE must be a positive integer' >&2; exit 1; }
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/artex/android-sdk}}"
@@ -96,7 +96,7 @@ cp -R skills "$work_dir/runtime/skills"
 cp -R "$android_dir/termux" "$work_dir/runtime/termux"
 cp LICENSE NOTICE CHANGELOG.md SYSTEM_PROMPT_ENTRYPOINTS.md config.example.json "$work_dir/runtime/"
 cp "$android_dir/README.md" "$work_dir/runtime/ANDROID-README.md"
-source_ref="${APAGENT_SOURCE_REF:-v${version%%-android.*}}"
+source_ref="${APAGENT_SOURCE_REF:-android-v${version}}"
 printf 'Corresponding source: https://github.com/DeepShawn/ARTEX/tree/%s\nSource archive: https://github.com/DeepShawn/ARTEX/archive/refs/tags/%s.tar.gz\nBuild instructions: android/README.md and android/build.sh in the source tree.\nLicense: GNU Affero General Public License v3.0; see LICENSE.\n' \
   "$source_ref" "$source_ref" > "$work_dir/runtime/SOURCE.txt"
 printf '%s\n' "$version" > "$work_dir/runtime/VERSION"

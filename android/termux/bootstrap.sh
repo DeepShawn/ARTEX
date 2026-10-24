@@ -53,9 +53,21 @@ ARTEX_HOME="$(cd -- "$ARTEX_HOME" && pwd -P)"
 export ARTEX_HOME
 info 'Installing Termux PostgreSQL, Python, Node.js and command-line tools...'
 # The APK feeds this script through bash -s; package managers must not consume
-# the remaining script from that same stdin stream.
-pkg update -y < /dev/null
-pkg install -y postgresql python nmap ripgrep curl tar coreutils openssl ca-certificates jq util-linux nodejs-lts < /dev/null
+# the remaining script from that same stdin stream. apt's -y does not answer
+# dpkg conffile questions (for example Termux's pre-existing openssl.cnf).
+# Retain the user's configuration and recover a previous interrupted setup.
+command -v dpkg >/dev/null || die 'This installer requires the official apt/dpkg-based Termux distribution.'
+export DEBIAN_FRONTEND=noninteractive UCF_FORCE_CONFFOLD=1
+package_options=(-y -o Dpkg::Options::=--force-confold)
+pkg update -y < /dev/null \
+  || die 'Package index update failed. Open Termux, check its network/repository, then retry.'
+if ! dpkg --force-confold --configure -a < /dev/null; then
+  info 'Repairing interrupted Termux package dependencies...'
+  pkg install "${package_options[@]}" --fix-broken < /dev/null \
+    || die 'Package recovery failed. In Termux run: dpkg --configure -a; apt --fix-broken install. Then retry ARTEX initialization.'
+fi
+pkg install "${package_options[@]}" postgresql python nmap ripgrep curl tar coreutils openssl ca-certificates jq util-linux nodejs-lts < /dev/null \
+  || die 'Package installation failed. In Termux run: dpkg --configure -a; apt --fix-broken install. Keep existing configuration files when asked, then retry ARTEX initialization.'
 exec 8> "$ARTEX_HOME/run/install.lock"
 flock -w 30 8 || die 'Another ARTEX installation is in progress.'
 stage="$(mktemp -d "$ARTEX_HOME/run/install.XXXXXX")"

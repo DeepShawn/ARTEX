@@ -24,7 +24,20 @@
 
 Termux 的 `RUN_COMMAND` 接口从 0.95 提供，本文使用的标准输入和命令结果回调需要 **Termux ≥ 0.109**；实际使用建议选择最新稳定版。ARTEX APK 是独立应用，不使用 Termux 的共享用户身份，也不需要与 Termux 使用相同签名。若另外安装 Termux:API 等官方插件，它们与 Termux 必须来自相同发行来源，不能混装 F-Droid 与 GitHub 签名的插件。
 
-APK 文件名形如 `artex-0.3.17-android.1-arm64-v8a.apk`，与 Windows、Linux、macOS 构建统一发布在 [v0.3.17 Release](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.17)，并附带 SHA256 校验文件。后续覆盖安装 APK 需要使用相同签名；不要为了绕过签名冲突而先删除 Termux。Android 运行时与桌面平台的发布包不同，不应通过桌面版压缩包覆盖手机上的可执行文件。
+当前推荐 `artex-0.3.17-android.2-arm64-v8a.apk`（versionCode 3），与 Windows、Linux、macOS 构建统一发布在 [v0.3.17 Release](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.17)，并附带 SHA256 校验文件。`.2` 修复后台安装 OpenSSL 时配置确认中断的问题，沿用 `.1` 的签名，可直接覆盖安装。后续覆盖安装 APK 需要使用相同签名；不要为了绕过签名冲突而先删除 Termux。Android 运行时与桌面平台的发布包不同，不应通过桌面版压缩包覆盖手机上的可执行文件。
+
+### 安装失败后的恢复
+
+如果出现 `RunCommandService requires allow-external-apps`，按上面的第 2 步在 Termux 内执行授权配置命令；这个开关不能由 ARTEX 跨应用沙箱自行写入。
+
+如果旧版安装日志出现 `openssl.cnf`、`end of file on stdin at conffile prompt`，说明软件包要求确认配置文件，但后台命令没有可交互的标准输入。安装 `.2` 后再次初始化会保留已有配置并尝试恢复中断的配置。也可以先在 Termux 手工修复：
+
+```sh
+dpkg --configure -a
+apt --fix-broken install
+```
+
+遇到 `Y/I/N/O/D/Z` 配置文件询问时，按回车使用默认 `N`，保留现有配置。完成后返回 ARTEX 再次点击初始化。`-y` 只回答 apt 的确认，不会替 dpkg 回答这种问题；新版单独传入 `--force-confold` 并设置非交互环境。不要删除 Termux 数据或 PostgreSQL 目录。
 
 ## 本地运行方式与权限
 
@@ -95,13 +108,15 @@ export ANDROID_KEYSTORE_PASSWORD_FILE="/private/keystore-password.txt"
 export ANDROID_KEY_ALIAS=artex
 
 bash android/prepare-toolchain.sh
-APAGENT_BUILD_VERSION=0.3.17-android.1 ANDROID_VERSION_CODE=2 \
+APAGENT_BUILD_VERSION=0.3.17-android.2 ANDROID_VERSION_CODE=3 \
   APAGENT_PACKAGE_DIR="$PWD/dist/android-v0.3.17" bash android/build.sh
-python3 android/verify-apk.py dist/android-v0.3.17/artex-0.3.17-android.1-arm64-v8a.apk
+python3 android/verify-apk.py dist/android-v0.3.17/artex-0.3.17-android.2-arm64-v8a.apk
 ```
 
 密码文件应仅有一行，并设为仅本人可读；也可用 `ANDROID_KEYSTORE_PASSWORD` 环境变量提供密码。只有私钥密码与 keystore 密码不同时，才额外设置 `ANDROID_KEY_PASSWORD_FILE` 或 `ANDROID_KEY_PASSWORD`。`GO=/path/to/go` 可选择 Go 编译器。已有经过确认的生产前端导出时，可设置 `APAGENT_SKIP_FRONTEND=1` 复用 `server/webui/dist`；默认会重新安装前端依赖并导出生产页面。
 
-脚本生成签名 APK 与其 `.sha256` 文件，并在 `android/app/src/main/assets/` 生成 runtime 压缩包、元数据和 bootstrap。它们及 `android/build/` 均被 Git 忽略。runtime 包内含程序、内置 skills、Termux 脚本、部署说明、`LICENSE`、`NOTICE` 与 `SOURCE.txt`；APK 也直接附带许可证、署名和源码地址。Android 版本默认对应同版本核心的标签（本版为 `v0.3.17`），可通过 `APAGENT_SOURCE_REF` 指定其他源码标签。
+脚本生成签名 APK 与其 `.sha256` 文件，并在 `android/app/src/main/assets/` 生成 runtime 压缩包、元数据和 bootstrap。它们及 `android/build/` 均被 Git 忽略。runtime 包内含程序、内置 skills、Termux 脚本、部署说明、`LICENSE`、`NOTICE` 与 `SOURCE.txt`；APK 也直接附带许可证、署名和源码地址。Android 版本默认对应标签 `android-v<Android版本>`（本版为 `android-v0.3.17-android.2`），可通过 `APAGENT_SOURCE_REF` 指定其他源码标签。原始四端核心源码仍为 `v0.3.17`。
+
+可在有 `dpkg` 和 `dpkg-deb` 的 Linux 主机运行 `python3 android/tests/test-package-bootstrap.py`，用隔离的软件包根目录复现配置确认 EOF，并验证后台升级保留配置、恢复中断、修复依赖三个分支。测试不会配置主机软件包，也不能代替 Android 实机验证。
 
 发布时应先提交源码，再构建对应版本。SDK/NDK 的版本与下载 SHA256 固定；`SOURCE_DATE_EPOCH` 可显式指定 runtime 压缩包的时间，默认取当前提交时间，无 Git 元数据的源码压缩包则使用 0。完整 APK 的二进制内容还会受 Java/Go 版本、签名密钥与打包文件时间影响，因此不宣称不同环境下必然逐字节相同。源码与构建脚本可从该版本的 GitHub 标签或 Release 自动提供的源码压缩包取得。

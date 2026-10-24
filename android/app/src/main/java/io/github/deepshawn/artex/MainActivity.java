@@ -43,7 +43,7 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity {
     private static final String BASE_URL = "http://127.0.0.1:8787";
     private static final String TERMUX_PERMISSION = "com.termux.permission.RUN_COMMAND";
-    private static final String TERMUX_SETUP = "mkdir -p ~/.termux; touch ~/.termux/termux.properties; if ! grep -q '^allow-external-apps=true$' ~/.termux/termux.properties; then printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties; fi; termux-reload-settings";
+    private static final String TERMUX_SETUP = "mkdir -p ~/.termux; touch ~/.termux/termux.properties; sed -i '/^[[:space:]]*allow-external-apps[[:space:]]*=/d' ~/.termux/termux.properties; printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties; termux-reload-settings";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout home;
@@ -103,6 +103,8 @@ public final class MainActivity extends Activity {
         addText("Android · arm64-v8a · Termux", 14, Color.rgb(87, 103, 125));
         status = addText("正在检查本地服务…", 18, Color.rgb(8, 127, 140));
         details = addText("前端、Go 后端与 PostgreSQL 都运行在这台手机。LLM 使用你在系统中配置的服务。", 15, Color.rgb(65, 81, 103));
+        resultText = addText("", 13, Color.rgb(126, 57, 39));
+        resultText.setTextIsSelectable(true);
         setup = button("初始化 / 启动本地服务", v -> requestCommand(1));
         enter = button("进入工作台", v -> openWorkbench());
         enter.setEnabled(false);
@@ -114,8 +116,6 @@ public final class MainActivity extends Activity {
         addText("1. 安装官方 Termux（F-Droid 或 GitHub 稳定版）。\n2. 在 Termux 中启用外部应用调用，再授予本 APK 的运行命令权限。\n3. 点击“初始化 / 启动”，首次安装需要联网；可在 Termux 查看进度。", 15, Color.rgb(65, 81, 103));
         button("复制 Termux 授权配置命令", v -> copySetup());
         addText("默认地址：127.0.0.1:8787。首次进入后设置管理员密码，用户名 APAGENT。基础工具包含 Python、nmap、ripgrep、curl；浏览器自动化及需要 root 的功能受安卓环境限制。\n\n这是实验版，构建环境没有安卓实机或模拟器，手机运行仍需实际验证。卸载 Termux 会删除数据库与工作区，请先备份。", 14, Color.rgb(87, 103, 125));
-        resultText = addText("", 13, Color.rgb(126, 57, 39));
-        resultText.setTextIsSelectable(true);
 
         web = new WebView(this);
         WebSettings ws = web.getSettings();
