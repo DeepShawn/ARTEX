@@ -383,6 +383,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
             </div>
           </div>
 
+          {/* 系统提示词入口：可编辑的 Agent 正文；保存到 /api/agents/{key}/prompt，非完整运行时 system。 */}
           <Textarea className="font-mono text-xs" rows={16} value={prompt}
             placeholder="留空则使用内置默认提示词" onChange={(e) => setPrompt(e.target.value)} />
 

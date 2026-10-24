@@ -174,6 +174,12 @@ for item in common start stop status; do
   cp -- "$payload/termux/$item.sh" "$ARTEX_HOME/bin/$item.sh"
   chmod 700 "$ARTEX_HOME/bin/$item.sh"
 done
+mkdir -p -- "$ARTEX_HOME/docs"
+for item in LICENSE NOTICE CHANGELOG.md ANDROID-README.md SOURCE.txt SYSTEM_PROMPT_ENTRYPOINTS.md; do
+  if [[ -f "$payload/$item" ]]; then
+    cp -- "$payload/$item" "$ARTEX_HOME/docs/$item"
+  fi
+done
 # Seed defaults without replacing user-edited skills on a repeat installation.
 python - "$payload/skills" "$ARTEX_HOME/skills" <<'PY'
 import os, pathlib, shutil, sys

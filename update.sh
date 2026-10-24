@@ -28,7 +28,7 @@ update_docker(){
   [ -f .env ] || die "未找到 .env，请先运行 ./install.sh 完成首次部署"
 
   # 可选：升级到指定版本 tag（不填则沿用 .env 中的 APAGENT_TAG）。
-  local tag; tag="$(ask '目标镜像 tag（回车沿用 .env / v0.3.16）' '')"
+  local tag; tag="$(ask '目标镜像 tag（回车沿用 .env / v0.3.17）' '')"
   if [ -n "$tag" ]; then
     [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || die "镜像 tag 只能含字母、数字、下划线、点和短横线"
     if grep -q '^APAGENT_TAG=' .env; then

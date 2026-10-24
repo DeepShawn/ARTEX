@@ -15,6 +15,7 @@ import (
 // §2.1 / C1). Skill-gated MCP names are NOT in this block; they surface when their
 // skill loads. Returns a single plain segment + boundary 0 when there is no global
 // block to add.
+// 系统提示词入口：追加工具引导并生成传给 agentcore.Options.SystemPrompt 的分段。
 func deferredSystem(sysText string, def DeferredInfo) (system []string, boundary int) {
 	sysText += def.FindingGuidance
 	block := actool.RenderDeferredToolsBlock(def.GlobalNames)

@@ -24,7 +24,7 @@
 
 Termux 的 `RUN_COMMAND` 接口从 0.95 提供，本文使用的标准输入和命令结果回调需要 **Termux ≥ 0.109**；实际使用建议选择最新稳定版。ARTEX APK 是独立应用，不使用 Termux 的共享用户身份，也不需要与 Termux 使用相同签名。若另外安装 Termux:API 等官方插件，它们与 Termux 必须来自相同发行来源，不能混装 F-Droid 与 GitHub 签名的插件。
 
-APK 文件名形如 `artex-0.3.16-android.1-arm64-v8a.apk`，发布时附带 SHA256 校验文件。后续覆盖安装 APK 需要使用相同签名；不要为了绕过签名冲突而先删除 Termux。Android 运行时与桌面平台的发布包不同，不应通过桌面版压缩包覆盖手机上的可执行文件。
+APK 文件名形如 `artex-0.3.17-android.1-arm64-v8a.apk`，与 Windows、Linux、macOS 构建统一发布在 [v0.3.17 Release](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.17)，并附带 SHA256 校验文件。后续覆盖安装 APK 需要使用相同签名；不要为了绕过签名冲突而先删除 Termux。Android 运行时与桌面平台的发布包不同，不应通过桌面版压缩包覆盖手机上的可执行文件。
 
 ## 本地运行方式与权限
 
@@ -58,6 +58,8 @@ Android 的后台执行策略仍然适用。保留一个 Termux 会话及其前�
 Android/Termux 的工具能力取决于设备、软件包和系统权限。普通应用没有 root 或原始套接字能力；部分 nmap 模式、抓包、Docker、systemd，以及桌面版 Playwright/Chromium 的安装与运行不能照搬桌面部署。未安装或不受支持的工具会影响相关任务，不能把界面可打开等同于全部渗透测试工具已可用。
 
 默认安装根目录为 Termux 中的 `$HOME/.local/share/artex`，可通过脚本的 `ARTEX_HOME` 覆盖。其下 `postgres/` 保存数据库，`data/` 保存工作区，`skills/` 保存技能，`config/` 保存连接配置与数据库密码，`logs/` 保存日志，根目录的 `jwt.key` 保存 JWT 签名密钥。
+
+`docs/SYSTEM_PROMPT_ENTRYPOINTS.md` 标出系统提示词的配置、拼接和模型调用入口；同一 `docs/` 目录还保留许可证、源码地址和部署说明。
 
 这些文件位于 Termux 的私有存储中。**卸载 Termux 或清除其应用数据会删除这些内容。** 升级和重新初始化应保留已有数据库；不要通过删除数据目录来解决启动问题。迁移手机或重装前，备份 PostgreSQL（例如使用 `pg_dump`）、工作区、自定义技能与 JWT 密钥，并保存恢复方法。
 
@@ -93,13 +95,13 @@ export ANDROID_KEYSTORE_PASSWORD_FILE="/private/keystore-password.txt"
 export ANDROID_KEY_ALIAS=artex
 
 bash android/prepare-toolchain.sh
-APAGENT_BUILD_VERSION=0.3.16-android.1 ANDROID_VERSION_CODE=1 \
-  APAGENT_PACKAGE_DIR="$PWD/dist/android" bash android/build.sh
-python3 android/verify-apk.py dist/android/artex-0.3.16-android.1-arm64-v8a.apk
+APAGENT_BUILD_VERSION=0.3.17-android.1 ANDROID_VERSION_CODE=2 \
+  APAGENT_PACKAGE_DIR="$PWD/dist/android-v0.3.17" bash android/build.sh
+python3 android/verify-apk.py dist/android-v0.3.17/artex-0.3.17-android.1-arm64-v8a.apk
 ```
 
 密码文件应仅有一行，并设为仅本人可读；也可用 `ANDROID_KEYSTORE_PASSWORD` 环境变量提供密码。只有私钥密码与 keystore 密码不同时，才额外设置 `ANDROID_KEY_PASSWORD_FILE` 或 `ANDROID_KEY_PASSWORD`。`GO=/path/to/go` 可选择 Go 编译器。已有经过确认的生产前端导出时，可设置 `APAGENT_SKIP_FRONTEND=1` 复用 `server/webui/dist`；默认会重新安装前端依赖并导出生产页面。
 
-脚本生成签名 APK 与其 `.sha256` 文件，并在 `android/app/src/main/assets/` 生成 runtime 压缩包、元数据和 bootstrap。它们及 `android/build/` 均被 Git 忽略。runtime 包内含程序、内置 skills、Termux 脚本、部署说明、`LICENSE`、`NOTICE` 与 `SOURCE.txt`；APK 也直接附带许可证、署名和源码地址。Android 版本默认对应 `android-v0.3.16.1` 标签，可通过 `APAGENT_SOURCE_REF` 指定其他源码标签。
+脚本生成签名 APK 与其 `.sha256` 文件，并在 `android/app/src/main/assets/` 生成 runtime 压缩包、元数据和 bootstrap。它们及 `android/build/` 均被 Git 忽略。runtime 包内含程序、内置 skills、Termux 脚本、部署说明、`LICENSE`、`NOTICE` 与 `SOURCE.txt`；APK 也直接附带许可证、署名和源码地址。Android 版本默认对应同版本核心的标签（本版为 `v0.3.17`），可通过 `APAGENT_SOURCE_REF` 指定其他源码标签。
 
 发布时应先提交源码，再构建对应版本。SDK/NDK 的版本与下载 SHA256 固定；`SOURCE_DATE_EPOCH` 可显式指定 runtime 压缩包的时间，默认取当前提交时间，无 Git 元数据的源码压缩包则使用 0。完整 APK 的二进制内容还会受 Java/Go 版本、签名密钥与打包文件时间影响，因此不宣称不同环境下必然逐字节相同。源码与构建脚本可从该版本的 GitHub 标签或 Release 自动提供的源码压缩包取得。

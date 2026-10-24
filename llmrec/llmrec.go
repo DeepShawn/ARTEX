@@ -352,6 +352,7 @@ func (r *Recorder) record(req llm.CompletionRequest, session, taskID, worker, re
 }
 
 // serializeRequest builds a JSON representation of the completion request.
+// 系统提示词入口（观测点）：req.System 已组装完成；启用录制时可与原始 HTTP 请求对照。
 func (r *Recorder) serializeRequest(req llm.CompletionRequest) string {
 	m := map[string]any{
 		"system":     req.System,

@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
 
   apagent:
-    image: ${APAGENT_IMAGE:-ghcr.io/deepshawn/artex}:${APAGENT_TAG:-v0.3.16}
+    image: ${APAGENT_IMAGE:-ghcr.io/deepshawn/artex}:${APAGENT_TAG:-v0.3.17}
     depends_on:
       postgres:
         condition: service_healthy

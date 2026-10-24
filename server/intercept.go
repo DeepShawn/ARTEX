@@ -74,6 +74,7 @@ func reviewCompletion(ctx context.Context, prov llm.Provider, prompt string, inp
 // budget includes the explanation and complete closing JSON delimiters.
 func streamCollectText(ctx context.Context, prov llm.Provider, system, user string) (string, error) {
 	temp := 0.0
+	// 系统提示词入口（审批裁判）：策略放 System，待审操作的结构化输入放 user，二者分开。
 	req := llm.CompletionRequest{
 		System:      []string{system},
 		Messages:    []llm.Message{llm.UserText(user)},

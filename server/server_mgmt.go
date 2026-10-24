@@ -509,6 +509,7 @@ func (s *Server) pgGetAgent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// 系统提示词入口：已鉴权的模板写入接口；校验语法/变量后保存新版本，不是注入内容审查。
 func (s *Server) pgSavePrompt(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {

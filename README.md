@@ -7,9 +7,11 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 🌐 **在线 Demo**： [https://apagent-demo.vercel.app/](https://apagent-demo.vercel.app/)
 
-📦 **ARTEX 分发渠道**：[GitHub Releases](https://github.com/DeepShawn/ARTEX/releases) 提供内嵌前端的预编译包，Docker 镜像发布到 `ghcr.io/deepshawn/artex`。当前发布版本：**v0.3.16**。
+📦 **ARTEX 分发渠道**：[GitHub Releases](https://github.com/DeepShawn/ARTEX/releases) 提供内嵌前端的预编译包，Docker 镜像发布到 `ghcr.io/deepshawn/artex`。当前发布版本：**v0.3.17**。
 
-📱 **Android arm64-v8a 实验版**：[APK 下载](https://github.com/DeepShawn/ARTEX/releases/tag/android-v0.3.16.1) · [安装说明](android/README.md)。APK 与同一台手机上的 Termux 配合运行后端、PostgreSQL 和工具；无需远程 ARTEX 服务器。需要 Android 8.0+，尚未完成安卓实机验证。
+📱 **Android arm64-v8a 实验版**：[APK 下载](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.17) · [安装说明](android/README.md)。APK 与同一台手机上的 Termux 配合运行后端、PostgreSQL 和工具；无需远程 ARTEX 服务器。需要 Android 8.0+，尚未完成安卓实机验证。
+
+📝 **系统提示词入口**：[配置、拼接与模型调用位置](SYSTEM_PROMPT_ENTRYPOINTS.md)，关键源码已使用「系统提示词入口」注释标注。
 
 </div>
 
@@ -70,15 +72,15 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 本仓库使用 [DeepShawn/ARTEX Releases](https://github.com/DeepShawn/ARTEX/releases) 与 GHCR 镜像 `ghcr.io/deepshawn/artex`。旧 Docker Hub `autumn27/apagent` 不再使用。
 
-**直接运行预编译包**：在 [v0.3.16](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.16) 下载对应平台的 zip 和 `SHA256SUMS`，校验并解压；目标机器无需 Go 或 Node.js，但必须能连接 PostgreSQL。Linux amd64 示例：
+**直接运行预编译包**：在 [v0.3.17](https://github.com/DeepShawn/ARTEX/releases/tag/v0.3.17) 下载对应平台的 zip 和 `SHA256SUMS`，校验并解压；目标机器无需 Go 或 Node.js，但必须能连接 PostgreSQL。Linux amd64 示例：
 
 ```bash
-curl -fLO https://github.com/DeepShawn/ARTEX/releases/download/v0.3.16/apagent-0.3.16-linux-amd64.zip
-curl -fLO https://github.com/DeepShawn/ARTEX/releases/download/v0.3.16/SHA256SUMS
+curl -fLO https://github.com/DeepShawn/ARTEX/releases/download/v0.3.17/apagent-0.3.17-linux-amd64.zip
+curl -fLO https://github.com/DeepShawn/ARTEX/releases/download/v0.3.17/SHA256SUMS
 # 只校验下载的这一份包；不要忽略校验失败。
-grep '  apagent-0.3.16-linux-amd64.zip$' SHA256SUMS | sha256sum -c -
-unzip apagent-0.3.16-linux-amd64.zip
-cd apagent-0.3.16-linux-amd64
+grep '  apagent-0.3.17-linux-amd64.zip$' SHA256SUMS | sha256sum -c -
+unzip apagent-0.3.17-linux-amd64.zip
+cd apagent-0.3.17-linux-amd64
 cp config.example.json config.json   # 按“数据库准备”填写连接信息
 ./start.sh
 ```
@@ -141,7 +143,7 @@ git clone https://github.com/DeepShawn/ARTEX.git
 cd ARTEX
 cp .env.example .env
 # 编辑 .env，必须填写 POSTGRES_PASSWORD（建议随机字母数字密码）
-# 默认镜像 ghcr.io/deepshawn/artex:v0.3.16
+# 默认镜像 ghcr.io/deepshawn/artex:v0.3.17
 # 密码含 @、:、/ 等 URL 特殊字符时，还需填写 URL 编码后的 APAGENT_PG_DSN。
 docker compose pull
 docker compose up -d --wait --wait-timeout 180
@@ -162,7 +164,7 @@ docker compose ps
 # 先按方式一构建 web/out 并复制到 server/webui/dist
 mkdir -p dist/amd64
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedui -trimpath \
-  -ldflags "-s -w -X main.version=0.3.16" -o dist/amd64/apagent ./cmd/apagent
+  -ldflags "-s -w -X main.version=0.3.17" -o dist/amd64/apagent ./cmd/apagent
 docker build -t apagent:local .
 # 在 .env 将 APAGENT_IMAGE=apagent、APAGENT_TAG=local，然后：
 docker compose up -d --wait --wait-timeout 180
@@ -213,7 +215,7 @@ APAGENT_TARGETS=linux/arm64 ./build.sh --release  # 只出需要的目标
 
 产物：`dist/apagent-<version>-<os>-<arch>.zip` + `SHA256SUMS`。各包包含程序、启动脚本、`skills/`、`config.example.json` 与 README / LICENSE / NOTICE / CHANGELOG；Linux/macOS 包另含 `reset-password.sh`。Windows 程序为 `apagent.exe`、入口为 `start.bat`；其余平台运行 `./start.sh`。目标机解压后先填写 `config.json`。
 
-> 版本号默认取自 `git describe --tags --always --dirty`，也可用 `APAGENT_BUILD_VERSION=v0.3.16 ./build.sh --release` 指定。正式发布应使用对应 tag 的干净源码；`dev` 或带提交后缀的开发版本会禁用页面一键更新。默认发布 Linux amd64/arm64、macOS amd64/arm64、Windows amd64 五个平台。
+> 版本号默认取自 `git describe --tags --always --dirty`，也可用 `APAGENT_BUILD_VERSION=v0.3.17 ./build.sh --release` 指定。正式发布应使用对应 tag 的干净源码；`dev` 或带提交后缀的开发版本会禁用页面一键更新。默认发布 Linux amd64/arm64、macOS amd64/arm64、Windows amd64 五个平台。
 
 ### 方式五：注册为系统服务（systemd）
 
@@ -338,7 +340,7 @@ cd ARTEX
 ```bash
 cd ARTEX
 git pull                       # 更新 compose / 脚本（可选）
-# 指定版本：在 .env 设 APAGENT_TAG=v0.3.16
+# 指定版本：在 .env 设 APAGENT_TAG=v0.3.17
 docker compose pull apagent
 docker compose up -d --no-deps --wait --wait-timeout 180 apagent  # PostgreSQL 保持运行
 ```
